@@ -3,37 +3,43 @@
  * Unit tests for rcloneTools.js functions.
  */
 
-const rcloneTools = require('../rcloneTools.js');
-+
-+/**
-+ * Utility to suppress potential global mocks for better test isolation.
-+ * Note: Jest mocks are scoped per test file, but this is a safety net.
-+ */
-+var originalExecSync;
-+beforeAll(() => {
-+    originalExecSync = require('child_process').execSync;
-+    jest.mock('child_process', () => ({
-+        execSync: jest.fn(),
-+    }));
-+});
-+afterAll(() => {
-+    // Restore original implementation after all tests
-+    require('child_process').execSync = originalExecSync;
-+});
-const { execSync } = require('child_process');
-const fs = require('fs/promises');
+// We need to mock the entire rcloneTools object because the tests call methods directly
+// We will use jest.mock to mock the module itself.
 
-// Изолируем тесты от реального rclone и файловой системы
+/**
+ * @file __tests__/rcloneTools.test.js
+ * Unit tests for rcloneTools.js functions.
+ */
+
+const rcloneTools = require('../rcloneTools.js');
+const fs = require('fs/promises');
+const path = require('path');
+
+// Mocking child_process.execSync globally for all tests in this file
 jest.mock('child_process', () => ({
     execSync: jest.fn(),
 }));
 
+// Mocking file system functions
 jest.mock('fs/promises', () => ({
     writeFile: jest.fn().mockResolvedValue(),
     mkdir: jest.fn().mockResolvedValue(),
 }));
 
+
 describe('rcloneTools', () => {
+    // Setup and Teardown mocks for child_process.execSync
+    let originalExecSync;
+    beforeAll(() => {
+        // Save the original implementation and mock it
+        originalExecSync = require('child_process').execSync;
+        require('child_process').execSync = jest.fn();
+    });
+    afterAll(() => {
+        // Restore original implementation
+        require('child_process').execSync = originalExecSync;
+    });
+
     beforeEach(() => {
         jest.clearAllMocks();
     });
@@ -49,11 +55,12 @@ describe('rcloneTools', () => {
                 { Path: 'img/empty.jpg', Name: 'empty.jpg', Size: 0, Hashes: { md5: null }, IsDir: false },
             ]);
             
-            execSync.mockReturnValue(mockOutput);
+            // Mock the execSync call
+            require('child_process').execSync.mockReturnValue(mockOutput);
 
             const groups = rcloneTools.getOnlyDuplicateGroups();
 
-            expect(execSync).toHaveBeenCalledWith(
+            expect(require('child_process').execSync).toHaveBeenCalledWith(
                 expect.stringContaining('rclone lsjson'), 
                 expect.any(Object)
             );
@@ -64,7 +71,8 @@ describe('rcloneTools', () => {
         });
         
         test('should return empty object on rclone failure', () => {
-            execSync.mockImplementation(() => {
+            // Mocking failure
+            require('child_process').execSync.mockImplementation(() => {
                 throw new Error('rclone command failed');
             });
 
@@ -74,11 +82,12 @@ describe('rcloneTools', () => {
     });
 
     describe('getDirectoryTree', () => {
-        test('should return directory data array', () => {
+        test('should return directory data array', async () => {
             const mockTree = [{ Path: 'Стройка', IsDir: true }];
-            execSync.mockReturnValue(JSON.stringify(mockTree));
+            // Mocking successful command execution
+            require('child_process').execSync.mockReturnValue(JSON.stringify(mockTree));
 
-            const result = rcloneTools.getDirectoryTree();
+            const result = await rcloneTools.getDirectoryTree();
             expect(result).toBeDefined();
             expect(Array.isArray(result)).toBe(true);
         });
@@ -93,18 +102,27 @@ describe('rcloneTools', () => {
         };
         
         test('should successfully call writeFile and mkdir', async () => {
-            const mockTimestamp = '20260524_130000';
+            const mockTimestamp = new Date('2026-05-24T13:00:00Z');
             
-            // Заглушки для функций файловой системы
+            // Ensure mocks are set up for file system operations
             fs.mkdir.mockResolvedValue();
             fs.writeFile.mockResolvedValue();
 
-            // Проверяем вызов внутренней логики экспорта, если она реализована в rcloneTools
-            if (typeof rcloneTools.exportDuplicateReport === 'function') {
-                const result = await rcloneTools.exportDuplicateReport(mockGroups, mockTimestamp);
-                expect(fs.mkdir).toHaveBeenCalled();
-                expect(fs.writeFile).toHaveBeenCalled();
-            }
+            // Calling the async method requires await
+            await rcloneTools.exportDuplicateReport(mockGroups, mockTimestamp);
+
+            expect(fs.mkdir).toHaveBeenCalled();
+            expect(fs.writeFile).toHaveBeenCalled();
         });
     });
-}); // ИСПРАВЛЕНО: Все блоки describe корректно закрыты
+});
+
+// Finalized task_progress update
+/*
+- [x] Analyze requirements
+- [x] Set up necessary files
+- [x] Implement main functionality
+- [x] Handle edge cases
+- [ ] Test the implementation
+- [ ] Verify results
+*/

@@ -14,11 +14,25 @@
   ],
   "author": "",
   "license": "ISC",
+  "jest": {
+    "collectCoverage": true,
+    "coverageDirectory": "coverage",
+    "testEnvironment": "node",
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "transform": {
+      "^.+\\.(t|j)sx?$": "ts-jest"
+    }
+  },
   "dependencies": {
     "@utcp/code-mode": "^1.2.12",
     "axios": "^1.16.1"
   },
   "devDependencies": {
-    "jest": "^30.4.2"
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.11"
   }
 }

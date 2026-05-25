@@ -14,18 +14,18 @@
 const fs = require('fs').promises;
 const path = require('path');
 const { getBSRegisterEntries } = require('../utils/bsRegexParser');
-+
-+/**
-+ * Извлекает и стандартизирует BSUID из полного пути к файлу.
-+ * @param {string} fullPath - Полный путь к файлу.
-+ * @returns {Promise<{originalId: string, regionCode: string, uniqueNumber: string, standardId: string} | null>}
-+ */
-+async function extractAndStandardizeBSUID(fullPath) {
-+    // Используем полный путь как единственный сырой ID
-+    const entries = getBSRegisterEntries([fullPath]);
-+    // Возвращаем первый найденный и стандартизированный ID, если он есть.
-+    return entries.length > 0 ? entries[0] : null;
-+}
+
+/**
+ * Извлекает и стандартизирует BSUID из полного пути к файлу.
+ * @param {string} fullPath - Полный путь к файлу.
+ * @returns {Promise<{originalId: string, regionCode: string, uniqueNumber: string, standardId: string} | null>}
+ */
+async function extractAndStandardizeBSUID(fullPath) {
+    // Используем полный путь как единственный сырой ID
+    const entries = getBSRegisterEntries([fullPath]);
+    // Возвращаем первый найденный и стандартизированный ID, если он есть.
+    return entries.length > 0 ? entries[0] : null;
+}
 const { classifyFileWithOllama } = require('../api/ollamaClient');
 
 /**
@@ -59,9 +59,9 @@ const { classifyFileWithOllama } = require('../api/ollamaClient');
  * @returns {Promise<MigrationReport>} Финальный отчет миграции.
  */
 async function generateMigrationPlan(sourceDirectory) {
-    console.log(`\n=====================================================`);
+    console.log(`\n=============================================================`);
     console.log(`[Engine] Starting migration plan generation from: ${sourceDirectory}`);
-    console.log(`=====================================================\n`);
+    console.log(`===========================================================\n`);
 
     const fileList = await getFileMetadataList(sourceDirectory);
     if (fileList.length === 0) {
@@ -120,7 +120,7 @@ async function generateMigrationPlan(sourceDirectory) {
 
     console.log(`\n===============================================================`);
     console.log(`[Engine] Plan generation complete. Processed ${fileList.length} files.`);
-    console.log(`=============================================================\n`);
+    console.log(`===========================================================\n`);
     
     return report;
 }
@@ -176,5 +176,6 @@ async function saveMigrationReport(report, outputPath) {
  */
 module.exports = {
     generateMigrationPlan,
-    saveMigrationReport
+    saveMigrationReport,
+    extractAndStandardizeBSUID
 };
