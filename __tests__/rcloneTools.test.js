@@ -9,7 +9,7 @@ const rcloneTools = require('../rcloneTools.js');
 + * Utility to suppress potential global mocks for better test isolation.
 + * Note: Jest mocks are scoped per test file, but this is a safety net.
 + */
-+let originalExecSync;
++var originalExecSync;
 +beforeAll(() => {
 +    originalExecSync = require('child_process').execSync;
 +    jest.mock('child_process', () => ({
