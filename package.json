@@ -1,0 +1,24 @@
+{
+  "name": "ollama-deduplicator",
+  "version": "1.0.0",
+  "description": "AI-driven deduplication agent for Yandex Disk using Ollama and rclone.",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "test": "jest -- __tests__/*.test.js"
+  },
+  "keywords": [
+    "ollama",
+    "rclone",
+    "deduplication"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@utcp/code-mode": "^1.2.12",
+    "axios": "^1.16.1"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2"
+  }
+}
