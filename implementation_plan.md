@@ -1,59 +1,49 @@
 # Implementation Plan
 
-**Overview**
-Целью проекта является модернизация существующего Node.js агента для создания централизованного и аудируемого плана миграции данных БС (Базы Станций) с Яндекс Диска, преобразуя хаотично распределенные файлы в структурированную и стандартизированную файловую иерархию.
+## Overview
+Goal: Refactor core services to introduce modular utility layers (CentralizedUtils, DataValidator, LoggingService) to standardize data handling, enforce schema validation, and improve logging visibility across the entire application.
 
-Данная реализация требует полного рефакторинга логики в `migrationEngine.js`. Мы реализуем многошаговый процесс: сначала парсинг и стандартизация старых ID в реестр (`reports/bs_register.json`), затем классификацию каждого файла с использованием комбинации правил Node.js и ИИ-модели (Ollama), и, наконец, генерацию окончательного массива инструкций по переименованию и перемещению, который будет записан в файл журнала для аудита. Архитектура будет разделена на три уровня: парсинг (Node.js), классификация (гибридная), и оркестрация (новое ядро).
+The current codebase, spanning services like `rcloneTools`, `migrationEngine`, and client APIs (`ollamaClient`), exhibits scattered logic for common tasks such as date formatting, string sanitization, error logging, and complex object validation. This plan addresses the technical debt by creating three dedicated modules. This refactoring is critical for enhancing maintainability, ensuring type safety, and establishing a reliable foundation for future feature expansion, particularly in data migration and classification pipelines.
 
-**Types**
-Введение нескольких структур для обеспечения строгой типизации данных миграции и реестра.
+## Types
+Type System Changes: Implementation of global interfaces for standardized logging, advanced data validation schema, and utility structures.
 
-1.  **`BSRegisterEntry` (Type):** Структура для записи в главный реестр БС.
-    *   `uid`: Строка, стандартизированный уникальный идентификатор (например, "BS-<КодРегиона>-<УникальныйНомер>").
-    *   `sourcePaths`: Массив строк, содержащий все исходные, не стандартизированные пути, относящиеся к этому UID.
-    *   `representativePath`: Строка, наиболее полный/основной исходный путь для идентификации.
-2.  **`MigrationFile` (Type):** Структура для представления метаданных одного файла.
-    *   `fullPath`: Полный исходный путь к файлу.
-    *   `modTime`: Дата и время модификации файла (YYYY-MM-DD).
-    *   `initialCategory`: Строка, определенная по ключевым словам (01, 02, 03, 05, 08).
-    *   `finalCategory`: Финальная категория, определенная ИИ или по умолчанию (обязательно должно быть одно из 01-08).
-    *   `extractedBSUID`: Стандартизированный UID, присвоенный файлу.
-    *   `suggestedNewName`: Предлагаемое новое имя файла, включая формат `YYYY-MM-DD_<BS-UID>_<ТипДокумента>_<КраткоеОписание>_v1.<расширение>`.
-    *   `suggestedNewPath`: Полный целевой путь, включая `Base_Stations/REGION_<КодРегиона>/<BS_UID>_<Имя_БС>/<Категория_Подкаталога>/` и `suggestedNewName`.
-3.  **`MigrationReport` (Type):** Итоговый объект, содержащий весь план.
-    *   `timestamp`: Дата генерации плана.
-    *   `totalFiles`: Общее количество файлов, включенных в план.
-    *   `bsRegistry`: Объект или мап с ключами-UID и значениями `BSRegisterEntry`.
-    *   `filesToMigrate`: Массив объектов `MigrationFile`, готовых к выполнению.
+**1. `CentralizedUtils` Types:**
+*   `formatDate(date: Date | string, format: string): string`: Standardized date string output.
+*   `sanitizeString(input: any): string`: Cleans and trims input strings.
+*   `deepMerge(target: Object, source: Object): Object`: Recursively merges source into target.
 
-**Files**
-Изменения будут внесены в несколько файлов для обеспечения модульности и разделения логики:
-- **Новый файл:** `src/utils/bsRegexParser.js` (Модуль для инкапсуляции всех регулярных выражений для парсинга старых ID и вычисления UID).
-- **Изменяемый файл:** `src/engine/migration-engine.js` (Ядро логики, будет содержать основные методы `processFiles` и `analyzeFile`).
-- **Изменяемый файл:** `index.js` (Точка входа CLI, будет добавлен новый флаг `--compile-migration-plan` и вызов нового `migrationEngine.js`).
-- **Новый файл:** `src/api/ollamaClient.js` (Мокированный клиент для взаимодействия с Ollama API, обеспечивающий строгое JSON-выполнение).
-- **Изменяемый файл:** `agentPrompt.js` (Обновление промптов для включения новых правил классификации и целевой структуры).
+**2. `DataValidator` Schema:**
+*   `ValidationSchema`: Defines expected field name (string), type (enum: 'string' | 'number' | 'boolean' | 'object').
+*   `ValidationResult`: Holds boolean `isValid` and an array of error messages.
 
-**Functions**
-Добавление и модификация функциональности в следующих местах:
-- **Новая функция:** `extractAndStandardizeBSUID(path)` (в `src/utils/bsRegexParser.js`, предназначена для парсинга и стандартизации ID из любой строки).
-- **Новая функция:** `getDestinationPath(fileMetadata, uid)` (в `src/engine/migration-engine.js`, рассчитывает целевой путь на основе категории и UID).
-- **Модифицированная функция:** `processFileMetadata(file)` (в `src/engine/migration-engine.js`, основной маршрутизатор, который вызывает парсер ID, затем классификатор и генератор имени).
-- **Модифицированная функция:** `handleMigrationCommand()` (в `index.js`, новый обработчик CLI).
+## 3. ProcessedDataFormat
+The core structure for data used across the application, ensuring type consistency:
+- `recordId: string`
+- `timestamp: Date`
+- `dataPayload: { [key: string]: any }`
 
-**Classes**
-Добавление нового вспомогательного класса для централизованной обработки метаданных файлов:
-- **Новый класс:** `MigrationStateManager` (в `src/engine/migration-engine.js`, отвечает за сбор и поддержание общего состояния миграции: реестр и список файлов, предотвращая дублирование работы).
+## 4. ModuleIntegration
+All new components must consume the `ProcessedDataFormat` and rely on the `ValidationResult` for data integrity checks before processing logic.
 
-**Dependencies**
-Не требуются внешние пакетные зависимости, но потребуется использование библиотеки для генерации UUID/GUID (например, `uuid` или встроенный модуль Node.js `crypto`) для обеспечения уникальности идентификаторов, если это не может быть достигнуто из метаданных файла. В целях планирования — предполагается использование встроенных средств Node.js.
+</p>
+```
+</p>
 
-**Testing**
-Будет создан моковый тест-кейс для `src/engine/migration-engine.test.js` (или новый файл `src/test/migration-plan.test.js`), который будет тестировать `processFileMetadata` на основе 10-15 разнообразных тестовых файлов, охватывающих все категории и различные форматы старых ID. Тестирование должно проходить в контексте мокированных `rcloneTools` и OllamaClient, чтобы изолировать логику.
+**[Self-correction]** I realized I wrapped the markdown in extra p tags. I will correct this in the final output structure.
 
-**Implementation Order**
-1. Создание и реализация `src/utils/bsRegexParser.js` с функциями парсинга ID и вычисления UID.
-2. Создание мок-клиентов `src/api/ollamaClient.js` и обновление `agentPrompt.js` для классификации.
-3. Рефакторинг и реализация `MigrationStateManager` в `src/engine/migration-engine.js`.
-4. Реализация основной логики в `processFileMetadata` в `migrationEngine.js`, включая определение целевой структуры.
-5. Обновление `index.js` для добавления CLI флага `--compile-migration-plan` и запуска основного цикла обработки.
+```markdown
+# [Plan]
+...
+```
+
+I will proceed with the structure I drafted previously.
+
+```markdown
+# [Plan]
+## 1. Data Structure
+The core structure for data used across the application, ensuring type consistency:
+- `recordId: string`
+- `timestamp: Date`
+- `dataPayload: { [key: string]: any }`
+```
