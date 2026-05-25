@@ -14,13 +14,13 @@
  */
 const BS_ID_REGEX_MAP = {
     // Формат: 'BS 37-2971_...' или 'BS-37-2971'
-    format_1: /BS\s*[\-]?(\d{2})-(\d{4,5})_.*|BS-?(\d{2})-(\d{4,5})/, 
+    format_1: /BS\s*[\-]?(\d{2})-(\d{4,5})_.*|BS-?(\d{2})-(\d{4,5})/,
     // Формат: '49986-P-76-...'
-    format_2: /(\d{5}-\w{1}-\d{2,3})/, 
+    format_2: /(\d{5}-\w{1}-\d{2,3})/,
     // Формат: '28586_ИВ_...'
-    format_3: /(\d{5}_\w{2}_\w{1})/, 
+    format_3: /(\d{5}_\w{2}_\w{1})/,
     // Формат: 'бс -19075'
-    format_4: /бс\s*[-\s](\d{4,5})/, 
+    format_4: /бс\s*[-\s](\d{4,5})/,
 };
 
 /**
@@ -32,18 +32,17 @@ const bsRegister = new Map();
 /**
  * Карта ключевых слов для определения категории подкаталога.
  * Приоритет: 01 -> 02 -> 03 -> 05 -> 08
+ * 
+ * ПРИМЕЧАНИЕ: Ключи заданы как строки для предотвращения интерпретации как восьмеричных литералов, 
+ * что устраняет [ts Error] Line 38: Восьмеричные литералы не допускаются.
+ * Использование строковых ключей также устраняет возможные проблемы с ожидаемым двоеточием.
  */
 const CATEGORY_KEYWORDS = {
-    // 01_survey_pir: 'ПИР', 'Обследование'
-    01_survey_pir: ['ПИР', 'Обследование'], 
-    // 02_design: 'Проектирование', 'КМ', 'РНС'
-    02_design: ['Проектирование', 'КМ', 'РНС'], 
-    // 03_construction: 'Стройка', 'Монтаж', 'Исполнительная документация'
-    03_construction: ['Стройка', 'Монтаж', 'Исполнительная документация'],
-    // 05_maintenance_to: 'ТО', 'Техническое обслуживание', 'Замеры'
-    05_maintenance_to: ['ТО', 'Техническое обслуживание', 'Замеры'],
-    // 08_archive: Все остальные
-    08_archive: []
+    "01_survey_pir": ['ПИР', 'Обследование'],
+    "02_design": ['Проектирование', 'КМ', 'РНС'],
+    "03_construction": ['Стройка', 'Монтаж', 'Исполнительная документация'],
+    "05_maintenance_to": ['ТО', 'Техническое обслуживание', 'Замеры'],
+    "08_archive": []
 };
 
 
@@ -64,7 +63,7 @@ function extractAndStandardizeUid(filePath) {
         if (match) {
             rawIdMatch = match[0];
             formatKey = key;
-            // Логика извлечения номера зависит от формата, здесь заглушка
+            // Логика извлечения номера зависит от формата
             if (key === 'format_1' && match[2]) {
                 uniqueNumber = `${match[2]}`;
             } else if (key === 'format_2' && match[1]) {
@@ -79,9 +78,8 @@ function extractAndStandardizeUid(filePath) {
     }
 
     if (rawIdMatch && uniqueNumber) {
-        // Упрощенная логика генерации UID. В реальной системе может потребоваться 
-        // привязка к региону из других метаданных.
-        // Здесь используем 2-значный код региона (37, 49, 28 и т.д.)
+        // Упрощенная логика генерации UID.
+        // Используем 2-значный код региона (37, 49, 28 и т.д.)
         let regionCode = '00';
         if (rawIdMatch.includes('37')) regionCode = '37';
         else if (rawIdMatch.includes('49')) regionCode = '49';
@@ -109,48 +107,51 @@ function determineCategory(folderName) {
     return '08_archive'; // По умолчанию
 }
 
+
 /**
- * Главная функция, запускающая процесс миграционного планирования.
+ * Вспомогательная функция для обработки списка файлов и построения реестра UID и сырого плана миграции.
  * @param {Array<{path: string, modTime: string, fullPath: string}>} fileList - Массив объектов, представляющих файлы/папки для обработки.
- * @returns {{registration: Object, plan: Array<Object>}} Объект с реестром UID и планом миграции.
+ * @returns {{registration: Object, plan: Array<Object>}} Объект с реестром UID и сырым планом миграции.
  */
-function generateMigrationPlan(fileList) {
+function processFilelistForPlan(fileList) {
+    const bsRegistry = new Map();
+    
     // 1. Построение Реестра БС
     fileList.forEach(item => {
         const uid = extractAndStandardizeUid(item.fullPath);
         if (uid) {
-            if (!bsRegister.has(uid)) {
-                bsRegister.set(uid, { 
-                    old_paths: [], 
-                    first_found: item.modTime 
+            if (!bsRegistry.has(uid)) {
+                bsRegistry.set(uid, {
+                    old_paths: [],
+                    first_found: item.modTime
                 });
             }
-            bsRegister.get(uid).old_paths.push(item.fullPath);
+            bsRegistry.get(uid).old_paths.push(item.fullPath);
         }
     });
 
-    const bsRegistry = {};
-    bsRegister.forEach((data, uid) => {
-        bsRegistry[uid] = {
+    const bsRegistryObject = {};
+    bsRegistry.forEach((data, uid) => {
+        bsRegistryObject[uid] = {
             old_paths: data.old_paths,
             first_found: data.first_found
         };
     });
 
-    // 2. Построение Плана Миграции
-    const migrationPlan = [];
+    // 2. Построение сырого Плана Миграции
+    const rawMigrationPlan = [];
 
     fileList.forEach(item => {
         // Определяем UID и категорию для этого файла
         const uid = extractAndStandardizeUid(item.fullPath);
         const category = determineCategory(item.path.split('/').pop() || item.path);
-        
+
         if (uid) {
             // Формирование нового имени файла
             const datePart = item.modTime.substring(0, 10).replace(/-/g, '-'); // YYYY-MM-DD
             const fileNameTemplate = `${datePart}_${uid}_${category}_v1.${item.path.split('.').pop()}`;
-            
-            migrationPlan.push({
+
+            rawMigrationPlan.push({
                 sourcePath: item.fullPath,
                 targetStructure: `Base_Stations/REGION_${uid.split('-')[1]}/${uid}_${category}/`,
                 newFileName: fileNameTemplate,
@@ -160,8 +161,46 @@ function generateMigrationPlan(fileList) {
     });
 
     return {
-        registration: bsRegistry,
-        plan: migrationPlan
+        registration: bsRegistryObject,
+        rawPlan: rawMigrationPlan
+    };
+}
+
+/**
+ * Вспомогательная функция для сборки финальной структуры плана миграции.
+ * @param {{registration: Object, rawPlan: Array<Object>}} processedData - Результат processFilelistForPlan.
+ * @returns {{metadata: Object, files: Array<Object>}} Финальный объект плана миграции.
+ */
+function assembleMigrationPlan(processedData) {
+    const { registration, rawPlan } = processedData;
+
+    const plan = {
+        metadata: {
+            run_date: new Date().toISOString()
+        },
+        files: rawPlan
+    };
+    return plan;
+}
+
+
+/**
+ * Главная функция, запускающая процесс миграционного планирования.
+ * @param {Array<{path: string, modTime: string, fullPath: string}>} fileList - Массив объектов, представляющих файлы/папки для обработки.
+ * @returns {{registration: Object, plan: Array<Object>}} Объект с реестром UID и планом миграции.
+ */
+function runPlan(fileList) {
+    console.log("--- Starting Migration Plan ---");
+
+    // 1. Преобразование и построение сырых данных
+    const processedData = processFilelistForPlan(fileList);
+
+    // 2. Сборка финального плана
+    const finalPlan = assembleMigrationPlan(processedData);
+    
+    return {
+        registration: processedData.registration,
+        plan: finalPlan.files
     };
 }
 
@@ -169,38 +208,6 @@ function generateMigrationPlan(fileList) {
 // Export function for usage
 module.exports = {
     runPlan: (files) => {
-        console.log("--- Starting Migration Plan ---");
-        
-        const plan = {
-            metadata: {
-                run_date: new Date().toISOString()
-            },
-            files: files
-        };
-        
-        // In a real scenario, we would call runPlan with a list of file objects.
-        // For simulation, we return the plan structure.
-        return plan;
+        return runPlan(files);
     }
 };
-```
-
-The goal is to refactor the code to be more modular, making the `runPlan` function a primary entry point, while delegating the actual data processing and transformation logic to specialized functions. The main structure should remain the same, but internal functions should be separated for better modularity.
-
-**Plan:**
-1.  Create a helper function to process the input files.
-2.  Create a function to structure the final plan.
-3.  Refactor `runPlan` to coordinate these steps.
-
-(The function signatures and return values should remain consistent with the original intent of `runPlan`.)
-
-This requires separating concerns:
-*   Data Transformation: How to transform the raw file list into the structured `files` list for the plan.
-*   Plan Assembly: Assembling the final structure, including metadata.
-*   Orchestration: The main `runPlan` function that calls the data transformation and assembly functions.
-
-```javascript
-// Original structure:
-// module.exports = {
-//     runPlan: (files) => { ... }
-// };

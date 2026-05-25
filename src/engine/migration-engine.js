@@ -1,181 +1,128 @@
 /**
- * src/engine/migration-engine.js
- *
- * Ядро системы миграции метаданных Баз Станций (БС).
- * Отвечает за оркестрацию процесса: парсинг ID -> Классификация (LLM) -> Генерация отчета.
- * Является главным источником бизнес-логики для миграции метаданных.
- *
- * ВНИМАНИЕ: Все внешние зависимости (parsing, classification) должны быть импортированы.
- *
- * @module MigrationEngine
+ * @fileoverview Центральный оркестратор для процесса миграции файловой структуры.
+ * Отвечает за:
+ * 1. Получение метаданных файлов.
+ * 2. Парсинг и стандартизация уникальных идентификаторов (UID).
+ * 3. Определение целевой категории каталогов.
+ * 4. Классификация файлов с помощью AI-сервиса.
+ * 5. Агрегация данных в финальный план миграции.
  */
 
-// Импорты
-const fs = require('fs').promises;
-const path = require('path');
-const { getBSRegisterEntries } = require('../utils/bsRegexParser');
+const fsUtil = require('../utils/file-system');
+const DetectionService = require('../services/detection-service');
+// Предполагаемый модуль для работы с rclone (мокается в тестах)
+const rcloneTools = require('../rcloneTools'); 
 
 /**
- * Извлекает и стандартизирует BSUID из полного пути к файлу.
- * @param {string} fullPath - Полный путь к файлу.
- * @returns {Promise<{originalId: string, regionCode: string, uniqueNumber: string, standardId: string} | null>}
+ * Класс-оркестратор, координирующий все этапы создания плана миграции.
  */
-async function extractAndStandardizeBSUID(fullPath) {
-    // Используем полный путь как единственный сырой ID
-    const entries = getBSRegisterEntries([fullPath]);
-    // Возвращаем первый найденный и стандартизированный ID, если он есть.
-    return entries.length > 0 ? entries[0] : null;
-}
-const { classifyFileWithOllama } = require('../api/ollamaClient');
-
-/**
- * @typedef {object} FileMetadata
- * @property {string} fullPath - Полный путь к файлу.
- * @property {string} extension - Расширение файла.
- * @property {string} contentSummary - Краткое описание содержимого файла (от контекста).
- * @property {Date} modTime - Время последней модификации файла.
- * @property {string} [sourceBsId] - Стандартизированный ID, полученный из пути.
- */
-
-/**
- * @typedef {object} MigrationFile
- * @property {FileMetadata} metadata - Исходные метаданные.
- * @property {object} classification - Результаты классификации от LLM.
- * @property {string} finalCategory - Финальная категория миграции (e.g., "01").
- * @property {string} suggestedNewName - Предлагаемое новое имя файла.
- */
-
-/**
- * @typedef {object} MigrationReport
- * @property {string} timestamp - Время генерации отчета.
- * @property {number} fileCount - Количество обработанных файлов.
- * @property {Array<MigrationFile>} files - Массив объектов с деталями миграции.
- */
-
-
-/**
- * Инициализирует и запускает полный цикл миграционной отчетности.
- * @param {string} sourceDirectory - Директория с метаданными для обработки.
- * @returns {Promise<MigrationReport>} Финальный отчет миграции.
- */
-async function generateMigrationPlan(sourceDirectory) {
-    console.log(`\n=============================================================`);
-    console.log(`[Engine] Starting migration plan generation from: ${sourceDirectory}`);
-    console.log(`===========================================================\n`);
-
-    const fileList = await getFileMetadataList(sourceDirectory);
-    if (fileList.length === 0) {
-        throw new Error("Не обнаружено метаданных файлов для обработки.");
+class MigrationEngine {
+    /**
+     * @param {Object} rcloneTools - Инструменты для работы с rclone.
+     * @param {DetectionService} detectionService - Сервис для AI-классификации.
+     */
+    constructor(rcloneTools, detectionService) {
+        this.rcloneTools = rcloneTools;
+        this.detectionService = detectionService;
     }
 
-    /** @type {Array<MigrationFile>} */
-    const migrationFiles = [];
+    /**
+     * Парсинг и приведение старых форматов ID к стандарту BS-<КодРегиона>-<УникальныйНомер>.
+     * @param {string} filePath - Полный путь к файлу (включает информацию о структуре).
+     * @returns {string} Стандартизированный UID или UNKNOWN_UID.
+     */
+    extractAndStandardizeUid(filePath) {
+        const pathParts = filePath.split(/[\\/]/);
+        const folderName = pathParts.find(part => part.match(/^[A-Za-z]{2,3}$/) && part.length > 1);
 
-    for (const metadata of fileList) {
-        try {
-            console.log(`\n--- Processing file: ${path.basename(metadata.fullPath)} ---`);
-
-            // 1. ПАРСИНГ ИДЕНТИФИКАТОРА (BSUID)
-            const sourceBsId = await extractAndStandardizeBSUID(metadata.fullPath);
-            
-            /** @type {MigrationFile} */
-            const migrationFile = {
-                metadata: metadata,
-                sourceBsId: sourceBsId,
-                classification: null,
-                finalCategory: '02', // Default
-                suggestedNewName: 'UNKNOWN',
-            };
-
-            // 2. КЛАССИФИКАЦИЯ (LLM)
-            if (sourceBsId) {
-                try {
-                    const classification = await classifyFileWithOllama(metadata);
-                    migrationFile.classification = classification;
-                    migrationFile.finalCategory = classification.finalCategory;
-                    migrationFile.suggestedNewName = classification.suggestedNewName;
-                } catch (error) {
-                    console.error(`[ERROR] Failed to classify ${path.basename(metadata.fullPath)}:`, error.message);
-                    migrationFile.classification = { error: error.message };
-                    migrationFile.finalCategory = '99'; // Error category
-                    migrationFile.suggestedNewName = `${metadata.modTime}_Error_ClassificationFailed_${metadata.extension}`;
-                }
-            } else {
-                console.warn(`[WARN] Skipping classification for ${path.basename(metadata.fullPath)}: BSUID не найден или некорректен.`);
-            }
-            
-            migrationFiles.push(migrationFile);
-
-        } catch (error) {
-            console.error(`[CRITICAL ERROR] Failed to process ${path.basename(metadata.fullPath)}:`, error.message);
+        // Логика парсинга (Упрощенная для демонстрации: ищет паттерн BS-XXX)
+        const match = filePath.match(/([A-Z]{2,3}-\d{3,5})/);
+        if (match) {
+            return match[1];
         }
+        
+        // В реальном коде здесь должна быть сложная regex,
+        // которая учитывает разные форматы (например, префиксы в папках)
+        return 'UNKNOWN_UID';
     }
 
-    // 3. СБОР ОТЧЕТА
-    const report = {
-        timestamp: new Date().toISOString(),
-        fileCount: fileList.length,
-        files: migrationFiles
-    };
-
-    console.log(`\n===============================================================`);
-    console.log(`[Engine] Plan generation complete. Processed ${fileList.length} files.`);
-    console.log(`===========================================================\n`);
-    
-    return report;
-}
-
-
-/**
- * Сбор базовой метаинформации для всех файлов в заданной директории.
- * @param {string} dirPath - Путь к директории.
- * @returns {Promise<Array<FileMetadata>>} Список метаданных.
- */
-async function getFileMetadataList(dirPath) {
-    console.log(`[Metadata] Scanning directory for files: ${dirPath}`);
-    const files = [];
-    
-    // Эмуляция получения списка файлов (в реальной системе здесь использовался бы fs.readdir и fs.stat)
-    // Для целей этого модуля, мы используем жестко закодированный список для симуляции работы.
-    const simulatedFiles = [
-        { fullPath: path.join(dirPath, 'module_A_BS-111-12345_report.docx'), extension: 'docx', contentSummary: 'Содержит отчет о продажах за период', modTime: new Date('2026-05-25T08:00:00Z') },
-        { fullPath: path.join(dirPath, 'module_B_BS-222-98765_schema.pdf'), extension: 'pdf', contentSummary: 'Детальная схема подключения оборудования', modTime: new Date('2026-05-24T12:00:00Z') },
-        { fullPath: path.join(dirPath, 'module_C_standalone_file.txt'), extension: 'txt', contentSummary: 'Простой лог данных, без ID', modTime: new Date('2026-05-23T09:00:00Z') },
-        { fullPath: path.join(dirPath, 'module_D_BS-111-55555_notes.md'), extension: 'md', contentSummary: 'Примечания к работе станции.', modTime: new Date('2026-05-25T07:30:00Z') }
-    ];
-    
-    for (const file of simulatedFiles) {
-        // Добавляем sourceBsId, если он явно указан для симуляции, иначе остается null
-        const sourceBsId = file.fullPath.includes('BS-111-12345') ? { uid: 'BS-111-12345', regionCode: '111', uniqueNumber: '12345' } : null;
-
-        files.push({
-            fullPath: file.fullPath,
-            extension: file.extension,
-            contentSummary: file.contentSummary,
-            modTime: file.modTime,
-            sourceBsId: sourceBsId
-        });
+    /**
+     * Определяет целевую категорию подкаталога по ключевым словам.
+     * @param {string} folderName - Имя папки, содержащей данные.
+     * @returns {string} Категория.
+     */
+    determineCategory(folderName) {
+        const lowerName = folderName.toLowerCase();
+        if (lowerName.includes('invoice') || lowerName.includes('receipt')) {
+            return 'Finance_Documents';
+        }
+        if (lowerName.includes('photo') || lowerName.includes('image') || lowerName.includes('media')) {
+            return 'Media_Assets';
+        }
+        if (lowerName.includes('report') || lowerName.includes('general')) {
+            return 'Business_Reports';
+        }
+        return 'Uncategorized';
     }
-    
-    return files;
+
+    /**
+     * Основная функция-фасад, которая координирует весь процесс.
+     * @param {string[]} fileList - Список относительных путей к файлам, требующих обработки.
+     * @returns {Promise<{plan: Object, reports: Object[]}>} Объект с финальным планом и отчетами.
+     */
+    async runPlan(fileList) {
+        console.log("--- [MigrationEngine] Запуск цикла планирования миграции ---");
+
+        // 1. Получение метаданных файлов
+        const { metadata: fileMetadataList } = await fsUtil.getBatchFileMetadata(fileList);
+        console.log(`[MigrationEngine] Успешно получено метаданных для ${fileMetadataList.length} файлов.`);
+
+        // 2. Инициализация структур данных
+        const reports = [];
+        const migrationPlan = [];
+
+        // 3. Цикл обработки каждого файла
+        for (const meta of fileMetadataList) {
+            try {
+                // Шаг 1: Парсинг UID
+                const standardizedUid = this.extractAndStandardizeUid(meta.relativePath);
+
+                // Шаг 2: Определение категории
+                const folderNameParts = meta.relativePath.split(/[\\/]/);
+                // Используем родительскую папку, чтобы определить категорию
+                const category = this.determineCategory(folderNameParts.length > 1 ? folderNameParts[folderNameParts.length - 2] : folderNameParts[0]);
+
+                // Шаг 3: Классификация (AI)
+                const detectionReport = await this.detectionService.analyzeFile(meta);
+
+                // 4. Сбор данных в план
+                const planEntry = {
+                    source: meta.relativePath,
+                    standardizedUid: standardizedUid,
+                    targetCategory: category,
+                    detection: detectionReport
+                };
+                migrationPlan.push(planEntry);
+                reports.push(detectionReport);
+
+            } catch (error) {
+                console.error(`Ошибка при обработке файла ${meta.relativePath}:`, error);
+                // Обработка ошибок, чтобы не прерывать весь процесс
+            }
+        }
+
+        const finalPlan = {
+            totalFilesProcessed: fileList.length,
+            migrationPlan: migrationPlan,
+            timestamp: new Date().toISOString(),
+            sourceDirectory: fileList[0] ? fileList[0].substring(0, fileList[0].lastIndexOf('/')) : 'N/A'
+        };
+
+        return {
+            plan: finalPlan,
+            reports: reports
+        };
+    }
 }
 
-/**
- * Сохраняет финальный отчет в JSON файл.
- * @param {MigrationReport} report - Объект отчета.
- * @param {string} outputPath - Путь для сохранения файла.
- */
-async function saveMigrationReport(report, outputPath) {
-    const jsonContent = JSON.stringify(report, null, 2);
-    await fs.writeFile(outputPath, jsonContent);
-    console.log(`\n[SUCCESS] Migration Plan Report saved to: ${outputPath}`);
-}
-
-/**
- * Экспорт публичных методов
- */
-module.exports = {
-    generateMigrationPlan,
-    saveMigrationReport,
-    extractAndStandardizeBSUID
-};
+module.exports = MigrationEngine;

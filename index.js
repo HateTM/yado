@@ -119,6 +119,40 @@ async function main() {
     }
 
     await compileMigrationPlan(allFiles);
-}
 
-main();
+    // ************************************************************
+    // НОВЫЙ БЛОК: ДЕМОНСТРАЦИЯ КОПИРОВАНИЯ ПАПКИ (Яндекс Диск -> Локально)
+    // ************************************************************
+    console.log('\n===============================================================================');
+    console.log('📦 ДЕМО: Выполнение задания "Скопировать папку с Яндекс Диска"');
+    console.log('===============================================================================');
+    
+    const sourcePath = 'ya:MySourceFolder'; // <-- Исходная папка на Яндекс Диске
+    const destPath = path.join(process.cwd(), 'copied_data'); // <-- Локальная папка назначения
+
+    console.log(`\nНачинаем копирование: ${sourcePath} -> ${destPath}`);
+
+    // 1. Создаем целевую директорию, если она не существует
+    try {
+        await require('fs').promises.mkdir(destPath, { recursive: true });
+        console.log(`✅ Целевая директория готова.`);
+    } catch (e) {
+        console.error(`❌ Не удалось создать целевую директорию: ${e.message}`);
+        return; // Прерываем выполнение
+    }
+
+    // 2. Вызываем rcloneTools для копирования
+    try {
+        const copyResult = await rcloneTools.copyDirectory(sourcePath, destPath);
+
+        if (copyResult.success) {
+            console.log('\n✨ УСПЕХ: Копирование папки с Яндекс Диска завершено!');
+            console.log(`Результат: ${copyResult.message}`);
+        } else {
+            console.error('\n❌ ОШИБКА: Не удалось скопировать папку с Яндекс Диска.');
+            console.error(`Детали ошибки: ${copyResult.error}`);
+        }
+    } catch (error) {
+        console.error(`\n🛑 КРИТИЧЕСКАЯ ОШИБКА при вызове copyDirectory:`, error.message);
+    }
+}

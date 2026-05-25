@@ -2,18 +2,42 @@
  * @file rcloneTools.js
  * @description Core utilities for interacting with cloud storage (Yandex Disk) using rclone.
  * Implements functions for duplicate detection, directory structure mapping, and reporting.
+ * 
+ * NOTE: All public methods must be called in an async context.
  */
 
-const { execSync } = require('child_process');
-const { writeFile, mkdir } = require('fs/promises');
-const path = require('path');
-const { exec } = require('child_process'); // Import exec for async rclone commands
+import { exec } from 'child_process';
+import { promisify } from 'util'; // Use ES Module import syntax
+// Wrapper for exec to ensure reliable promise-based execution
+const execAsync = (command, options = {}) => {
+  return new Promise((resolve, reject) => {
+    exec(command, options, (error, stdout, stderr) => {
+      if (error) {
+        reject({ error: error, stdout, stderr });
+      } else {
+        resolve({ stdout, stderr });
+      }
+    });
+  });
+};
+//>>>>
+// <task_progress>
+//- [x] Analyze requirements
+//- [x] Set up necessary files (Updated rcloneTools.js - Fixed execAsync wrapper)
+//- [ ] Implement and test core synchronization logic (Next: Write and run tests for `copyDirectory`)
+//- [ ] Verify results (Final test run and confirmation)
+//</task_progress>
 
+import { writeFile, mkdir } from 'fs/promises';
+import { join, basename, dirname } from 'path';
+
+// --- Константы ---
 const REMOTE = 'ya:';
 const REPORTS_DIR = 'reports';
 
+// --- Типы данных (JSDoc) ---
+
 /**
- * A structure representing aggregated file metrics for a directory.
  * @typedef {object} DirectoryMetrics
  * @property {number} fileCount - Total number of files.
  * @property {number} totalSizeBytes - Total size of files in bytes.
@@ -28,31 +52,39 @@ const REPORTS_DIR = 'reports';
 
 /**
  * @typedef {object} rcloneTools
- * @property {function(): object} getOnlyDuplicateGroups - Scans for duplicate files and returns groups.
- * @property {Promise<{metrics: {count: number, size: number}, tree: object}>} getDirectoryTree - Generates a structured map of directory paths and their aggregated metrics.
- * @property {Promise<{ success: boolean, path: string | null, error: string | null }>} exportDuplicateReport - Saves the duplicate report to a JSON file.
- * @property {Promise<{ success: boolean, path: string | null, error: string | null }>} exportDirectoryTree - Saves the directory tree structure to a JSON file.
- * @property {(filePath: string) => { success: boolean, error: string | null }} deleteFile - Deletes a specific file.
- * @property {(itemsToKeep: {itemsToKeep: string[]}) => {success: boolean, error: string | null}} getItemsToKeep - Determines items to keep based on criteria.
+ * @property {() => Promise<object>} getOnlyDuplicateGroups - Сканирует дубликаты и возвращает группы.
+ * @property {() => Promise<{metrics: {count: number, size: number}, tree: object}>} getDirectoryTree - Генерирует структуру каталогов с метриками.
+ * @property {(duplicateGroups: object, timestamp: Date) => Promise<{ success: boolean, path: string | null, error: string | null }>} exportDuplicateReport - Сохраняет отчет о дубликатах.
+ * @property {(directoryMap: object, timestamp: Date) => Promise<{ success: boolean, path: string | null, error: string | null }>} exportDirectoryTree - Сохраняет дерево каталогов.
+ * @property {(filePath: string) => Promise<{ success: boolean, error: string | null }>} deleteFile - Удаляет файл.
+ * @property {(sourcePath: string, destPath: string) => Promise<{success: boolean, error: string | null}>} copyDirectory - Копирует папку или файл.
+ * @property {(itemsToKeep: {itemsToKeep: string[]}) => Promise<{success: boolean, error: string | null}>} getItemsToKeep - Определяет файлы для сохранения.
  */
 
 /**
  * @type {rcloneTools}
  */
-const rcloneTools = {
+export const rcloneTools = {
   /**
-   * Сканирует диск через нативный lsjson и возвращает ТОЛЬКО группы дубликатов.
-   * @returns {object} Объект с группами дубликатов.
+   * Сканирует диск через нативный lsjson и асинхронно возвращает ТОЛЬКО группы дубликатов.
+   * @returns {Promise<object>} Объект с группами дубликатов.
    */
-  getOnlyDuplicateGroups: () => {
-    try {
-      console.log('⏳ Шаг 1: Сканирование Яндекс Диска и сбор MD5 хэшей...');
+  getOnlyDuplicateGroups: async () => {
+    console.log('⏳ Шаг 1: Сканирование Яндекс Диска и сбор MD5 хэшей...');
 
-      // Исполняем нативный lsjson. Флаг --hash заставляет подтянуть MD5 хэши.
-      const output = execSync(
-        `rclone lsjson ${REMOTE} -R --files-only --hash`,
-        { encoding: 'utf-8', maxBuffer: 100 * 1024 * 1024 }
-      );
+    try {
+      // Используем execAsync для асинхронного выполнения и обработки таймаута
+      const command = `rclone lsjson ${REMOTE} -R --files-only --hash`;
+      console.log(`Executing command: ${command}`);
+
+      const { stdout, stderr } = await execAsync(command, { timeout: 300000 });
+
+      if (stderr) {
+        console.error('❌ Ошибка rclone:', stderr);
+        return {};
+      }
+
+      const output = stdout;
 
       const allFiles = JSON.parse(output || '[]');
       const hashMap = {};
@@ -97,20 +129,21 @@ const rcloneTools = {
    * @param {Date} timestamp - Временная метка для имени файла.
    * @returns {Promise<{ success: boolean, path: string | null, error: string | null }>} Результат экспорта.
    */
-  async exportDuplicateReport(duplicateGroups, timestamp) {
-    return this._exportReport(
+  exportDuplicateReport: async (duplicateGroups, timestamp) => {
+    return rcloneTools._exportReport(
       duplicateGroups,
       'duplicates',
       timestamp
     );
   },
 
+
   /**
    * Генерирует структуру каталогов и обогащает ее метриками.
    * @param {string} rootPath - Корневой путь для анализа.
    * @returns {Promise<{metrics: {count: number, size: number}, tree: object}>} - Структурированное дерево каталогов с метриками.
    */
-  async getDirectoryTree(rootPath) {
+  getDirectoryTree: async (rootPath) => {
     console.log(`Generating directory tree starting at: ${rootPath}`);
 
     try {
@@ -118,25 +151,22 @@ const rcloneTools = {
       const command = `rclone lsjson ${REMOTE}${rootPath} -R`;
       console.log(`Executing command: ${command}`);
 
-      const output = await new Promise((resolve, reject) => {
-        exec(command, (error, stdout, stderr) => {
-          if (error) {
-            console.error(`Rclone command failed: ${stderr}`);
-            reject(new Error(stderr || error.message));
-            return;
-          }
-          resolve(stdout);
-        });
-      });
+      // Используем асинхронную команду
+      const { stdout, stderr } = await execAsync(command, { timeout: 300000 });
 
-      const items = JSON.parse(output);
+      if (stderr) {
+        console.error('❌ Ошибка rclone:', stderr);
+        throw new Error(stderr);
+      }
+
+      const items = JSON.parse(stdout);
       if (!items || items.length === 0) {
         throw new Error('No directories found or empty rclone output.');
       }
 
       // Строим дерево и собираем метрики
-      const tree = this._buildDirectoryTree(items, rootPath);
-      const metrics = this._calculateDirectoryMetrics(items);
+      const tree = rcloneTools._buildDirectoryTree(items, rootPath);
+      const metrics = rcloneTools._calculateDirectoryMetrics(items);
 
       return {
         metrics: metrics,
@@ -148,69 +178,58 @@ const rcloneTools = {
     }
   },
 
-  /**
-   * Экспортирует отчет о структуре каталогов в файл JSON.
-   * @param {object} directoryMap - Объект с картой каталогов.
-   * @param {Date} timestamp - Временная метка для имени файла.
-   * @returns {Promise<{ success: boolean, path: string | null, error: string | null }>} Результат экспорта.
-   */
-  async exportDirectoryTree(directoryMap, timestamp) {
-    return this._exportReport(
+
+  exportDirectoryTree: async (directoryMap, timestamp) => {
+    return rcloneTools._exportReport(
       directoryMap,
       'directory_tree',
       timestamp
     );
+
   },
 
-  /**
-   * Вспомогательная функция для экспорта отчётов (устраняет дублирование кода)
-   * @private
-   */
-  async _exportReport(data, reportType, timestamp) {
+    async _exportReport(data, reportType, timestamp) {
     try {
-      // Создаем уникальное имя файла
-      const timestampString = timestamp.toISOString().replace(/[:.]/g, '-');
+      // 1. Создание имени и пути файла
+      const timestampString = timestamp.toISOString().replace(/[:\.]/g, '-');
       const reportFileName = `${reportType}_${timestampString}.json`;
-      const reportFilePath = path.join(REPORTS_DIR, reportFileName);
+      const reportFilePath = join(REPORTS_DIR, reportFileName);
 
-      // Подготавливаем данные для отчета
+      // 2. Подготовка контента
+      // Используем JSON.stringify с отступами в 2 пробела для читаемости
       const reportContent = JSON.stringify(data, null, 2);
 
-      // Убеждаемся, что директория reports существует
-      await mkdir(REPORTS_DIR, { recursive:       true });
+      // 3. Гарантия существования директории reports
+      await mkdir(REPORTS_DIR, { recursive: true });
 
-
-      // Записываем файл
+      // 4. Запись файла
       await writeFile(reportFilePath, reportContent, 'utf-8');
 
       return { success: true, path: reportFilePath, error: null };
     } catch (error) {
-      console.error('❌ Ошибка при экспорте отчета:', error);
-      return { success: false, path: null, error: error.message };
+      // Возвращаем более подробную информацию об ошибке
+      console.error(`❌ Ошибка при экспорте отчета (${reportType}):`, error.message);
+      return { success: false, path: null, error: `Не удалось экспортировать отчет: ${error.message}` };
     }
   },
 
-  /**
-   * Вспомогательная функция для построения дерева каталогов из списка файлов
-   * @private
-   */
   _buildDirectoryTree(items, rootPath) {
     const root = {
       path: rootPath,
-      name: path.basename(rootPath),
+      name: basename(rootPath),
       children: []
     };
 
-    // Группируем элементы по родительским директориям
+    // Используем Map для эффективного поиска родительских каталогов
     const dirMap = new Map();
     dirMap.set(rootPath, root);
 
-    items.forEach(item => {
+    for (const item of items) {
       const itemPath = item.Path;
-      const parentPath = path.dirname(itemPath);
+      const parentPath = dirname(itemPath);
 
       if (!dirMap.has(parentPath)) {
-        const parentName = path.basename(parentPath);
+        const parentName = basename(parentPath);
         dirMap.set(parentPath, {
           path: parentPath,
           name: parentName,
@@ -219,6 +238,7 @@ const rcloneTools = {
       }
 
       const parent = dirMap.get(parentPath);
+      // Проверка, чтобы не добавлять элемент дважды, если он уже добавлен в более крупном контексте
       if (parent && !parent.children.some(child => child.path === itemPath)) {
         parent.children.push({
           path: itemPath,
@@ -228,7 +248,7 @@ const rcloneTools = {
           modTime: item.ModTime
         });
       }
-    });
+    }
 
     return root;
   },
@@ -236,17 +256,19 @@ const rcloneTools = {
   /**
    * Вспомогательная функция для расчёта метрик каталога
    * @private
-   */
+   * @param {Array < object >} items - Список JSON-объектов из rclone lsjson.
+    * @returns {DirectoryMetrics} Метрики.
+    */
   _calculateDirectoryMetrics(items) {
     let fileCount = 0;
     let totalSize = 0;
 
-    items.forEach(item => {
+    for (const item of items) {
       if (!item.IsDir) {
         fileCount++;
         totalSize += item.Size || 0;
       }
-    });
+    }
 
     return {
       count: fileCount,
@@ -255,13 +277,18 @@ const rcloneTools = {
   },
 
   /**
-   * Удаляет файл из облачного хранилища
-   * @param {string} filePath - Полный путь к файлу на облаке
-   * @returns {{ success: boolean, error: string | null }} Результат удаления
-   */
-  deleteFile(filePath) {
+   * Удаляет файл из облачного хранилища (Асинхронно).
+   * @param {string} filePath - Полный путь к файлу на облаке.
+    * @returns {Promise < { success: boolean, error: string | null } >} Результат удаления.
+    */
+  deleteFile: async (filePath) => {
     try {
-      execSync(`rclone delete ${REMOTE}${filePath}`);
+      const command = `rclone delete ${REMOTE}${filePath}`;
+      console.log(`Attempting to delete file: ${filePath}`);
+
+      // Используем execAsync и ждем результата
+      await execAsync(command, { timeout: 300000 });
+
       console.log(`✅ Файл удалён: ${filePath}`);
       return { success: true, error: null };
     } catch (error) {
@@ -271,21 +298,58 @@ const rcloneTools = {
   },
 
   /**
-   * Определяет файлы для сохранения в группах дубликатов (оставляет самый новый/самый большой)
-   * @param {object} duplicateGroups - Группы дубликатов из getOnlyDuplicateGroups
-   * @returns {{itemsToKeep: string[], success: boolean, error: string | null}} Список файлов для сохранения
+   * Копирует содержимое одного каталога (или файла) из источника в назначение.
+   * @param {string} sourcePath - Полный путь к источнику на облаке (e.g., yandex:source/path).
+   * @param {string} destPath - Полный путь к назначению на облаке (e.g., yandex:dest/path).
+   * @returns {Promise<{success: boolean, error: string | null}>} Результат копирования.
    */
-  getItemsToKeep(duplicateGroups) {
+  copyDirectory: async (sourcePath, destPath) => {
+    console.log(`⚡️ Начинается копирование с ${sourcePath} в ${destPath}`);
+    
+    // rclone copy: выполняет копирование, не удаляет ничего из назначения
+    const command = `rclone copy ${REMOTE}${sourcePath} ${REMOTE}${destPath}`;
+    console.log(`Executing command: ${command}`);
+
+    try {
+      const { stdout, stderr } = await execAsync(command, { timeout: 300000 });
+
+      if (stderr) {
+        console.error('❌ Ошибка rclone:', stderr);
+        return { success: false, error: stderr };
+      }
+
+      console.log(`✅ Копирование завершено. Стаутд: ${stdout}`);
+      return { success: true, error: null };
+    } catch (error) {
+      console.error(`❌ Критическая ошибка при копировании:`, error.message);
+      return { success: false, error: error.message };
+    }
+  },
+
+  /**
+   * Определяет файлы для сохранения в группах дубликатов (оставляет самый новый/самый большой)
+   * @param {object} duplicateGroups - Группы дубликатов из getOnlyDuplicateGroups.
+   * @returns {Promise < { itemsToKeep: string[], success: boolean, error: string | null } >} Список файлов для сохранения.
+   */
+  getItemsToKeep: async (duplicateGroups) => {
+//>//>>>
+//<//task_progress>
+//- //[x] Analyze requirements
+//- [x] Set up necessary files (Added copyDirectory function and updated rcloneTools.js)
+//- [ ] Implement and test core synchronization logic (Next: Implement and run tests for `copyDirectory`)
+//- [ ] Verify results (Final test run and confirmation)
+//</task_progress>
     const itemsToKeep = [];
 
     try {
-      Object.values(duplicateGroups).forEach(group => {
+      for (const hash of Object.values(duplicateGroups)) {
         // Оставляем файл с самой поздней датой изменения
-        const keepItem = group.reduce((latest, current) => {
+        const keepItem = hash.reduce((latest, current) => {
+          // Сравниваем даты. Предполагаем, что ModTime является валидной строкой даты.
           return new Date(current.ModTime) > new Date(latest.ModTime) ? current : latest;
         });
         itemsToKeep.push(keepItem.Path);
-      });
+      }
 
       return { itemsToKeep, success: true, error: null };
     } catch (error) {
