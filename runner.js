@@ -42,7 +42,7 @@ async function copyYandexDiskFolder(sourcePath, destPath) {
 // !!! КОНФИГУРАЦИЯ !!!
 // ОБЯЗАТЕЛЬНО ЗАМЕНИТЕ ЭТИ ПУТИ НА РЕАЛЬНЫЕ ПУТИ В ВАШЕМ ПРОФИЛЕ rclone (ya:)
 // ==============================================================================
-const YANDEX_SOURCE_FOLDER = 'ya:Исполнительная документация/'; 
+const YANDEX_SOURCE_FOLDER = 'Исполнительная документация/'; 
 const YANDEX_DESTINATION_FOLDER = '~/yado/ya_copy/';
 
 // Запуск функции

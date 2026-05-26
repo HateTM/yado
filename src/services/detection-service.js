@@ -16,7 +16,7 @@ class DetectionService {
      * @returns {{type: string, confidence: number}} Classification result.
      */
     static detectType(path, content) {
-        console.log(`[DetectionService] Detecting type for path: ${path}`);
+        Logger.info('Starting type detection for content classification', { path: path, content: content });
         // In a real implementation, this would use ML/NLP models or regex to classify data.
         if (!path || !content) {
             return { type: "UNKNOWN", confidence: 0.0 };
@@ -34,7 +34,7 @@ class DetectionService {
      * @returns {{type: string, confidence: number}} Classification result.
      */
     static detectContentQuality(metadata, content) {
-        console.log(`[DetectionService] Checking quality for metadata: ${JSON.stringify(metadata)}`);
+        Logger.debug('Starting content quality check', { metadata: metadata });
         // Example logic: Check for file size or specific patterns.
         if (metadata && metadata.size > 1024 * 1024) {
             return { type: "LARGE_MEDIA", confidence: 0.95 };

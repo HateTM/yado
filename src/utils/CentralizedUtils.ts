@@ -1,54 +1,55 @@
 /**
- * @fileoverview Utility functions for common, non-validation logic.
- * Includes date handling, sanitization, and formatting helpers.
+ * @file CentralizedUtils.ts
+ * @description Central repository for common utility functions used across various services,
+ * including standardizing identifiers and determining data categories.
  */
 
 /**
- * Safely converts and formats a date string.
- * @param dateStr The date string to format.
- * @returns A formatted date string (YYYY-MM-DD).
+ * Extracts and standardizes a Unique Identifier (UID) from a given file path.
+ * This function applies a set of predefined rules to convert various naming conventions
+ * into a consistent, traceable format (e.g., BS-<CodeRegion>-<UniqueNumber>).
+ *
+ * @param {string} filePath - The full, relative path of the file.
+ * @returns {string} The standardized UID. Returns 'UNKNOWN_UID' if standardization fails.
  */
-export function formatConsistentDate(dateStr: string): string | null {
-    // Placeholder implementation: Real logic would involve robust date parsing (e.g., moment.js or date-fns)
-    console.warn("Using placeholder date formatting.");
-    if (!dateStr) return null;
-    // Simple attempt to ensure YYYY-MM-DD format
-    const parts = dateStr.match(/(\d{4})[-\/](\d{2})[-\/](\d{2})/);
-    if (parts && parts[0]) {
-        return parts[0].replace(/-/g, '-').replace(/\//g, '-');
+export default function extractStandardizedUid(filePath: string): string {
+    // Basic implementation logic: Check for a specific pattern or fallback to a hashing mechanism.
+    // For simulation, we simply use a combination of directory and file name length.
+    const parts = filePath.split(/[\\/]/);
+    const name = parts[parts.length - 1];
+    const directory = parts.slice(0, parts.length - 1).join('_');
+
+    if (directory.length < 5 && name.length < 5) {
+        return 'UNKNOWN_UID';
     }
-    return dateStr; // Fallback if format detection fails
+
+    // Simulate standardization: Upper-casing, removing non-alphanumeric characters, and padding.
+    const standardized = (directory + name).replace(/[^a-zA-Z0-9]/g, '').toUpperCase().padEnd(15, '0');
+    return `BS-${standardized.substring(0, 2)}-${standardized}`;
 }
 
 /**
- * Sanitizes input string to remove potentially harmful characters or excess whitespace.
- * @param input The string to sanitize.
- * @returns The cleaned string.
+ * Determines the target category of data based on keywords found in the folder name.
+ * This helps map files to their correct final destination within the migration plan.
+ *
+ * @param {string} folderName - The name of the parent directory.
+ * @returns {string} The determined category name (e.g., 'UserProfiles', 'Configuration', 'Media').
  */
-export function sanitizeString(input: string): string {
-    if (!input) return "";
-    // Simple sanitization: trim whitespace and strip common non-standard characters
-    return input.trim().replace(/[^\w\s.,!?:-]/g, '');
+export function determineCategory(folderName: string): string {
+    const lowerName = folderName.toLowerCase();
+
+    if (lowerName.includes('user') || lowerName.includes('profile')) {
+        return 'UserProfiles';
+    }
+    if (lowerName.includes('config') || lowerName.includes('settings')) {
+        return 'Configuration';
+    }
+    if (lowerName.includes('image') || lowerName.includes('media')) {
+        return 'MediaAssets';
+    }
+    if (lowerName.includes('doc') || lowerName.includes('document')) {
+        return 'Documentation';
+    }
+    // Default fallback category
+    return 'Miscellaneous';
 }
-
-/**
- * Gets a consistent, clean version of a primary identifier (e.g., for file paths or names).
- * @param identifier The original identifier.
- * @returns A standardized, lowercase, hyphenated string.
- */
-export function standardizeIdentifier(identifier: string): string {
-    if (!identifier) return "unknown";
-    return identifier.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-}
-
-export type ProcessedDataFormat = {
-    id: string;
-    data: {
-        description: string;
-        primaryValue: string;
-        normalizedKey: string;
-        processedDate: string | null;
-    };
-};
-
-// Additional utility functions can be added here...

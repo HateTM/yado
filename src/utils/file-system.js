@@ -30,9 +30,9 @@ const { extractAndStandardizeBSUID } = require('./bsRegexParser');
  */
 async function getBatchFileMetadata(fileList) {
     console.log(`[FileSystem] Получение метаданных для ${fileList.length} файлов...`);
-    
+
     const metadataList = [];
-    
+
     // === Имитация данных для тестирования ===
     for (const relativePath of fileList) {
         let isDir = relativePath.includes('folder/') || relativePath.includes('archive/');
@@ -46,7 +46,7 @@ async function getBatchFileMetadata(fileList) {
         } else if (relativePath.includes("report_general")) {
             modTime = "2022-11-01";
         }
-        
+
         // Извлечение BSUID и проверка его наличия
         const bsuidMatch = await extractAndStandardizeBSUID(relativePath);
         let bsuidData = null;
@@ -56,7 +56,7 @@ async function getBatchFileMetadata(fileList) {
         } else {
             console.log(`[FileSystem] BSUID не найден для ${relativePath}.`);
         }
-        
+
         // Моделирование записи метаданных
         const metadata = {
             relativePath: relativePath,
@@ -80,7 +80,7 @@ async function getFileMetadata(filePath) {
     console.log(`[FileSystem] Получение метаданных для одиночного файла: ${filePath}`);
     // В реальной системе: await rcloneTools.getFileMetadata(filePath)
     // Здесь можно добавить логику для одного файла.
-    
+
     const bsuidMatch = await extractAndStandardizeBSUID(filePath);
     let bsuidData = null;
     if (bsuidMatch.bsuid) {

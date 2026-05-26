@@ -8,10 +8,13 @@
  * 5. Агрегация данных в финальный план миграции.
  */
 
-const fsUtil = require('../utils/file-system');
-const DetectionService = require('../services/detection-service');
+import fsUtil from '../utils/file-system';
+import DetectionService from '../services/detection-service';
+import { Logger } from '../utils/LoggingService';
+import { DataValidator } from '../utils/DataValidator';
+import { CentralizedUtils } from '../utils/CentralizedUtils';
 // Предполагаемый модуль для работы с rclone (мокается в тестах)
-const rcloneTools = require('../rcloneTools'); 
+import rcloneTools from '../rcloneTools';
 
 /**
  * Класс-оркестратор, координирующий все этапы создания плана миграции.
@@ -28,22 +31,14 @@ class MigrationEngine {
 
     /**
      * Парсинг и приведение старых форматов ID к стандарту BS-<КодРегиона>-<УникальныйНомер>.
-     * @param {string} filePath - Полный путь к файлу (включает информацию о структуре).
-     * @returns {string} Стандартизированный UID или UNKNOWN_UID.
+    * @param {string} filePath - Полный путь к файлу (включает информацию о структуре).
+    * @returns {string} Стандартизированный UID или UNKNOWN_UID.
      */
     extractAndStandardizeUid(filePath) {
-        const pathParts = filePath.split(/[\\/]/);
-        const folderName = pathParts.find(part => part.match(/^[A-Za-z]{2,3}$/) && part.length > 1);
-
-        // Логика парсинга (Упрощенная для демонстрации: ищет паттерн BS-XXX)
-        const match = filePath.match(/([A-Z]{2,3}-\d{3,5})/);
-        if (match) {
-            return match[1];
-        }
-        
-        // В реальном коде здесь должна быть сложная regex,
-        // которая учитывает разные форматы (например, префиксы в папках)
-        return 'UNKNOWN_UID';
+        // Используем CentralizedUtils для извлечения и стандартизации UID
+        const standardizedUid = CentralizedUtils.extractStandardizedUid(filePath);
+        LoggingService.debug(`[UID Extraction] Successfully processed UID for ${filePath}: ${standardizedUid}`);
+        return standardizedUid;
     }
 
     /**
@@ -51,31 +46,17 @@ class MigrationEngine {
      * @param {string} folderName - Имя папки, содержащей данные.
      * @returns {string} Категория.
      */
-    determineCategory(folderName) {
-        const lowerName = folderName.toLowerCase();
-        if (lowerName.includes('invoice') || lowerName.includes('receipt')) {
-            return 'Finance_Documents';
-        }
-        if (lowerName.includes('photo') || lowerName.includes('image') || lowerName.includes('media')) {
-            return 'Media_Assets';
-        }
-        if (lowerName.includes('report') || lowerName.includes('general')) {
-            return 'Business_Reports';
-        }
-        return 'Uncategorized';
-    }
-
     /**
      * Основная функция-фасад, которая координирует весь процесс.
      * @param {string[]} fileList - Список относительных путей к файлам, требующих обработки.
      * @returns {Promise<{plan: Object, reports: Object[]}>} Объект с финальным планом и отчетами.
      */
     async runPlan(fileList) {
-        console.log("--- [MigrationEngine] Запуск цикла планирования миграции ---");
+        LoggingService.info("--- [MigrationEngine] Запуск цикла планирования миграции ---");
 
         // 1. Получение метаданных файлов
         const { metadata: fileMetadataList } = await fsUtil.getBatchFileMetadata(fileList);
-        console.log(`[MigrationEngine] Успешно получено метаданных для ${fileMetadataList.length} файлов.`);
+        LoggingService.info(`[MigrationEngine] Успешно получено метаданных для ${ fileMetadataList.length } файлов.`);
 
         // 2. Инициализация структур данных
         const reports = [];
@@ -106,7 +87,7 @@ class MigrationEngine {
                 reports.push(detectionReport);
 
             } catch (error) {
-                console.error(`Ошибка при обработке файла ${meta.relativePath}:`, error);
+                LoggingService.error(`Ошибка при обработке файла ${ meta.relativePath }: `, error, { filePath: meta.relativePath });
                 // Обработка ошибок, чтобы не прерывать весь процесс
             }
         }
@@ -117,6 +98,7 @@ class MigrationEngine {
             timestamp: new Date().toISOString(),
             sourceDirectory: fileList[0] ? fileList[0].substring(0, fileList[0].lastIndexOf('/')) : 'N/A'
         };
+        LoggingService.info("--- [MigrationEngine] Планирование миграции завершено ---");
 
         return {
             plan: finalPlan,

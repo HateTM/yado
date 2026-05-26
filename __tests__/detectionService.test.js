@@ -3,6 +3,16 @@
  * Unit tests for DetectionService class.
  */
 
+// Mocking the new centralized logging service to ensure tests are isolated
+const mockLogger = {
+    info: jest.fn(),
+    debug: jest.fn(),
+};
+jest.mock('../src/utils/LoggingService', () => ({
+    __esModule: true,
+    default: mockLogger,
+}));
+
 const { DetectionService } = require('../src/services/detection-service');
 
 describe('DetectionService', () => {

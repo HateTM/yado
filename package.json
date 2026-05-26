@@ -33,6 +33,7 @@
   },
   "devDependencies": {
     "jest": "^30.4.2",
-    "ts-jest": "^29.4.11"
+    "ts-jest": "^29.4.11",
+    "typescript-eslint-language-service": "^5.0.5"
   }
 }

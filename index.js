@@ -47,7 +47,7 @@ async function compileMigrationPlan(fileList) {
         const detectionService = new DetectionService();
         // rcloneToolsMock используется только для передачи в конструктор, 
         // так как getBatchFileMetadata уже имитирует метаданные.
-        const mockRcloneTools = { getOnlyDuplicateGroups: async () => [] }; 
+        const mockRcloneTools = { getOnlyDuplicateGroups: async () => [] };
 
         const migrationEngine = new MigrationEngine(mockRcloneTools, detectionService);
 
@@ -104,7 +104,7 @@ async function main() {
     }
 
     console.log(`\n--- Обнаружен режим компиляции плана миграции ---`);
-    
+
     // В реальном проекте, мы бы собирали ВСЕ файлы из всех переданных каталогов.
     // Используем имитацию сканирования для примера.
     let allFiles = [];
@@ -126,7 +126,7 @@ async function main() {
     console.log('\n===============================================================================');
     console.log('📦 ДЕМО: Выполнение задания "Скопировать папку с Яндекс Диска"');
     console.log('===============================================================================');
-    
+
     const sourcePath = 'ya:MySourceFolder'; // <-- Исходная папка на Яндекс Диске
     const destPath = path.join(process.cwd(), 'copied_data'); // <-- Локальная папка назначения
 

@@ -40,38 +40,38 @@ async function classifyFileWithOllama(metadata) {
 
     const summary = metadata.contentSummary.toLowerCase();
     const fullPath = metadata.fullPath.toLowerCase();
-    
+
     if (summary.includes('отчет о продажах') || fullPath.includes('report.docx')) {
         // Логика 1: Отчеты о продажах (Категория 01)
         finalCategory = '01';
         suggestedNewName = 'SALES_REPORT_';
-        classification = { 
-            model_reasoning: 'Обнаружены ключевые слова "отчет о продажах".', 
-            assigned_category: 'Sales' 
+        classification = {
+            model_reasoning: 'Обнаружены ключевые слова "отчет о продажах".',
+            assigned_category: 'Sales'
         };
     } else if (summary.includes('схема') || fullPath.includes('pdf')) {
         // Логика 2: Схемы, документация (Категория 02 - по умолчанию)
         finalCategory = '02';
         suggestedNewName = 'SCHEMA_DOCUMENT_';
-        classification = { 
-            model_reasoning: 'Расширение PDF и ключевое слово "схема" указывают на техническую документацию.', 
-            assigned_category: 'Technical' 
+        classification = {
+            model_reasoning: 'Расширение PDF и ключевое слово "схема" указывают на техническую документацию.',
+            assigned_category: 'Technical'
         };
     } else if (summary.includes('лог') || fullPath.includes('txt')) {
         // Логика 3: Логи (Категория 03)
         finalCategory = '03';
         suggestedNewName = 'LOG_DATA_';
-        classification = { 
-            model_reasoning: 'Расширение TXT и упоминание "лог данных" указывает на лог-файл.', 
-            assigned_category: 'Log' 
+        classification = {
+            model_reasoning: 'Расширение TXT и упоминание "лог данных" указывает на лог-файл.',
+            assigned_category: 'Log'
         };
     } else if (metadata.fullPath.includes('notes.md')) {
         // Логика 4: Примечания (Категория 02, но особое имя)
         finalCategory = '02';
         suggestedNewName = 'NOTE_';
-        classification = { 
-            model_reasoning: 'Файл содержит заметки/примечания.', 
-            assigned_category: 'Note' 
+        classification = {
+            model_reasoning: 'Файл содержит заметки/примечания.',
+            assigned_category: 'Note'
         };
     } else {
         // По умолчанию
