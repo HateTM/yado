@@ -1,9 +1,11 @@
 # Project Brief: Advanced Workflow Orchestration with Rclone Integration
 
 ## 🎯 Core Goal
+
 The primary objective of this project is to build an advanced, multi-step orchestration system that combines local resource management (via `rclone`) with sophisticated LLM decision-making (via `agentPrompt.js` and `index.js`). The system aims to automate complex data governance tasks, specifically addressing the detection and resolution of duplicate or redundant files in large, distributed storage systems.
 
 ## 🚀 Key Capabilities
+
 1. **Cloud File System Management (rclone)**:
    - Provides robust, scriptable tools for interacting with various cloud storage platforms (e.g., Google Drive, S3) using `rclone`.
    - Core functions include full synchronization (`rclone sync`), reliable copying, detailed listing, and metadata inspection (`rclone lsjson`).
@@ -19,7 +21,8 @@ The primary objective of this project is to build an advanced, multi-step orches
    - The system is designed to be modular, allowing easy integration of new resource types or different operational logic blocks.
 
 ## 💡 Success Metrics and Scope Definition
-* **Automation Depth**: The system must move beyond simple file operations and automate the *decision-making* process, mimicking human expert judgment to minimize manual intervention and data loss.
-* **Reliability**: The final execution step must rely on the LLM's decision, mitigating the risk of arbitrary file deletion or incorrect syncing.
-* **Scale**: The architecture must be designed to handle petabyte-scale datasets, necessitating efficient metadata handling and chunking of input data.
 
+- **Automation Depth**: The system must move beyond simple file operations and automate the *decision-making* process, mimicking human expert judgment to minimize manual intervention and data loss.
+
+- **Reliability**: The final execution step must rely on the LLM's decision, mitigating the risk of arbitrary file deletion or incorrect syncing.
+- **Scale**: The architecture must be designed to handle petabyte-scale datasets, necessitating efficient metadata handling and chunking of input data.

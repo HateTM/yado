@@ -5,26 +5,23 @@
  */
 
 // Mocking dependencies
-// Mocking dependencies
-const mockRcloneTools = {
-    getOnlyDuplicateGroups: jest.fn(),
-    exportDuplicateReport: jest.fn(),
-    getDirectoryTree: jest.fn(),
-    deleteFile: jest.fn(),
-    exportDirectoryTree: jest.fn(),
-    getItemsToKeep: jest.fn(),
-};
+// Create function stubs for mocking all required rcloneTools methods
+const mockGetOnlyDuplicateGroups = jest.fn();
+const mockExportDuplicateReport = jest.fn();
+const mockGetDirectoryTree = jest.fn();
+const mockDeleteFile = jest.fn();
+const mockExportDirectoryTree = jest.fn();
+const mockGetItemsToKeep = jest.fn();
 
-// We must explicitly mock the module to ensure properties are accessible and usable for jest.fn() calls.
-// We export the entire mocked module structure.
-jest.mock('../rcloneTools', () => ({
+// Mock the entire rcloneTools module structure to ensure we interact with our mock functions.
+jest.mock('../rcloneTools.cjs', () => ({
     rcloneTools: {
-        getOnlyDuplicateGroups: mockRcloneTools.getOnlyDuplicateGroups,
-        exportDuplicateReport: mockRcloneTools.exportDuplicateReport,
-        getDirectoryTree: mockRcloneTools.getDirectoryTree,
-        deleteFile: mockRcloneTools.deleteFile,
-        exportDirectoryTree: mockRcloneTools.exportDirectoryTree,
-        getItemsToKeep: mockRcloneTools.getItemsToKeep,
+        getOnlyDuplicateGroups: mockGetOnlyDuplicateGroups,
+        exportDuplicateReport: mockExportDuplicateReport,
+        getDirectoryTree: mockGetDirectoryTree,
+        deleteFile: mockDeleteFile,
+        exportDirectoryTree: mockExportDirectoryTree,
+        getItemsToKeep: mockGetItemsToKeep,
     }
 }));
 
@@ -36,11 +33,13 @@ jest.mock('../agentPrompt', () => ({
 }));
 
 // Mocking Node.js built-ins
-import { execSync } from 'child_process';
-import * as rcloneTools from '../rcloneTools';
-import * as agentPrompt from '../agentPrompt';
-import { main } from '../index';
+const { execSync } = require('child_process');
 
+// By requiring the mocked modules, we ensure that rcloneTools and agentPrompt 
+// variables inside the test file scope point to the mocked objects.
+const rcloneTools = require('../rcloneTools.cjs').rcloneTools;
+const agentPrompt = require('../agentPrompt.js').agentPrompt;
+const main = require('../index.js');
 // Mocking the main function that needs testing
 // Since we cannot import 'main' directly if it's defined in the global scope, 
 // we assume the structure allows us to call it directly, or we mock the execution environment.

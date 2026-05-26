@@ -1,0 +1,15 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "mocha": {
+    "entry": ["tests/**/*.{cjs,cts,js,ts}"]
+  },
+  "workspaces": {
+    "packages/eslint-visitor-keys": {
+      "entry": ["test-d/**/*.test-d.ts"]
+    },
+    "packages/espree": {
+      "entry": ["test-d/**/*.test-d.ts", "tools/**/*.js"],
+      "ignore": ["tests/fixtures/**"]
+    }
+  }
+}

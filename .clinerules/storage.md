@@ -5,15 +5,19 @@ Global settings, secrets and workspace state are stored in **file-backed JSON st
 ## Key Abstractions
 
 ### `StorageContext` (src/shared/storage/storage-context.ts)
+
 The entry point. Created via `createStorageContext()` and passed to `StateManager.initialize()`. Contains three `ClineFileStorage` instances:
+
 - `globalState` → `~/.cline/data/globalState.json`
 - `secrets` → `~/.cline/data/secrets.json` (mode 0o600)
 - `workspaceState` → `~/.cline/data/workspaces/<hash>/workspaceState.json`
 
 ### `ClineFileStorage` (src/shared/storage/ClineFileStorage.ts)
+
 Synchronous JSON key-value store backed by a single file. Supports `get()`, `set()`, `setBatch()`, `delete()`. Writes are atomic (write-then-rename).
 
 ### `StateManager` (src/core/storage/StateManager.ts)
+
 In-memory cache on top of `StorageContext`. All runtime reads hit the cache; writes update cache immediately and debounce-flush to disk.
 
 ## ⚠️ Do NOT Use VSCode's ExtensionContext for Storage
@@ -21,6 +25,7 @@ In-memory cache on top of `StorageContext`. All runtime reads hit the cache; wri
 **Do not** read from or write to `context.globalState`, `context.workspaceState`, or `context.secrets` for persistent data. These are VSCode-specific and not available on CLI or JetBrains.
 
 Instead, use:
+
 ```typescript
 // Reading state
 StateManager.get().getGlobalStateKey("myKey")
@@ -51,7 +56,7 @@ On VSCode startup, a migration copies data from VSCode's `ExtensionContext` stor
 
 ## File Layout
 
-```
+```bash
 ~/.cline/
   data/
     globalState.json          # Global settings & state

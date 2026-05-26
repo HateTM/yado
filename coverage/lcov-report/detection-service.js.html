@@ -23,16 +23,16 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">27.27% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>11/11</span>
+                <span class='fraction'>3/11</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">0% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>13/13</span>
+                <span class='fraction'>0/13</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">27.27% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>11/11</span>
+                <span class='fraction'>3/11</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line high'></div>
+    <div class='status-line low'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -126,15 +126,15 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">4x</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">4x</span>
-<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -146,10 +146,10 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">3x</span>
-<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -171,15 +171,15 @@ class DetectionService {
      * @returns {{type: string, confidence: number}} Classification result.
      */
     static detectType(path, content) {
-        console.log(`[DetectionService] Detecting type for path: ${path}`);
+        Logger.info('Starting type detection for content classification', { path: path, content: content });
         // In a real implementation, this would use ML/NLP models or regex to classify data.
-        if (!path || !content) {
-            return { type: "UNKNOWN", confidence: 0.0 };
+<span class="cstat-no" title="statement not covered" >        if (!path || !content) {</span>
+<span class="cstat-no" title="statement not covered" >            return { type: "UNKNOWN", confidence: 0.0 };</span>
         }
-        if (path.endsWith('.json') &amp;&amp; content &amp;&amp; content.includes('{')) {
-             return { type: "JSON", confidence: 0.9 };
+<span class="cstat-no" title="statement not covered" >        if (path.endsWith('.json') &amp;&amp; content &amp;&amp; content.includes('{')) {</span>
+<span class="cstat-no" title="statement not covered" >             return { type: "JSON", confidence: 0.9 };</span>
         }
-        return { type: "TEXT", confidence: 0.8 };
+<span class="cstat-no" title="statement not covered" >        return { type: "TEXT", confidence: 0.8 };</span>
     }
 &nbsp;
     /**
@@ -189,12 +189,12 @@ class DetectionService {
      * @returns {{type: string, confidence: number}} Classification result.
      */
     static detectContentQuality(metadata, content) {
-        console.log(`[DetectionService] Checking quality for metadata: ${JSON.stringify(metadata)}`);
+        Logger.debug('Starting content quality check', { metadata: metadata });
         // Example logic: Check for file size or specific patterns.
-        if (metadata &amp;&amp; metadata.size &gt; 1024 * 1024) {
-            return { type: "LARGE_MEDIA", confidence: 0.95 };
+<span class="cstat-no" title="statement not covered" >        if (metadata &amp;&amp; metadata.size &gt; 1024 * 1024) {</span>
+<span class="cstat-no" title="statement not covered" >            return { type: "LARGE_MEDIA", confidence: 0.95 };</span>
         }
-        return { type: "STANDARD_DATA", confidence: 0.7 };
+<span class="cstat-no" title="statement not covered" >        return { type: "STANDARD_DATA", confidence: 0.7 };</span>
     }
 }
 &nbsp;
@@ -205,7 +205,7 @@ module.exports = { DetectionService };</pre></td></tr></table></pre>
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-05-25T12:21:43.580Z
+                at 2026-05-25T17:07:03.272Z
             </div>
         <script src="prettify.js"></script>
         <script>

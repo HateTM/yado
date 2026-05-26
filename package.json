@@ -2,7 +2,7 @@
   "name": "ollama-deduplicator",
   "version": "1.0.0",
   "description": "AI-driven deduplication agent for Yandex Disk using Ollama and rclone.",
-  "type": "module",
+  "type": "commonjs",
   "scripts": {
     "start": "node index.js",
     "test": "jest -- __tests__/*.test.js"
@@ -29,9 +29,15 @@
   },
   "dependencies": {
     "@utcp/code-mode": "^1.2.12",
-    "axios": "^1.16.1"
+    "axios": "^1.16.1",
+    "eslint-js": "github:eslint/js"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@typescript-eslint/eslint-plugin": "^8.60.0",
+    "eslint": "^10.4.0",
+    "eslint-plugin-react": "^7.37.5",
+    "globals": "^17.6.0",
     "jest": "^30.4.2",
     "ts-jest": "^29.4.11",
     "typescript-eslint-language-service": "^5.0.5"

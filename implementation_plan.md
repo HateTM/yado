@@ -1,56 +1,39 @@
 # Implementation Plan
 
-## Overview
+Overview
+Интеграция полноценного API-обертки для rclone позволит системе управлять подключением к облачным хранилищам, проводить проверку доступности (connectivity check) и выполнять операции копирования файлов (sync/copy) между любыми настроенными удаленными хранилищами, включая Яндекс.Диск. Это критически важно для обеспечения возможности облачного бэкапа и синхронизации данных пользователя.
 
-Goal: Refactor core services to introduce modular utility layers (CentralizedUtils, DataValidator, LoggingService) to standardize data handling, enforce schema validation, and improve logging visibility across the entire application.
+Types
+Определяются следующие структуры данных:
+1. RcloneRemote: Объект, содержащий имя удаленного хранилища (string) и тип хранилища (string).
+2. RcloneConnectionResult: Объект, содержащий статус подключения (boolean), сообщение (string) и, при успехе, информацию об использовании пространства (object).
+3. RcloneCopyResult: Объект, содержащий статус копирования (boolean), ID операции (string) и список скопированных/пропущенных файлов (array[string]).
 
-The current codebase, spanning services like `rcloneTools`, `migrationEngine`, and client APIs (`ollamaClient`), exhibits scattered logic for common tasks such as date formatting, string sanitization, error logging, and complex object validation. This plan addresses the technical debt by creating three dedicated modules. This refactoring is critical for enhancing maintainability, ensuring type safety, and establishing a reliable foundation for future feature expansion, particularly in data migration and classification pipelines.
+Files
+- `rcloneTools.cjs`: Основной модуль, куда будут добавлены все новые API-функции rclone.
+- `src/utils/rclone-cli-wrapper.js`: (Новый файл) Отдельный модуль для инкапсуляции всех вызовов rclone CLI и парсинга их JSON-вывода. Это улучшит читаемость и тестируемость `rcloneTools.cjs`.
+- `__tests__/rcloneTools.test.cjs`: Добавление новых тестов для проверки функциональности подключений и копирования.
 
-## Types
+Functions
+- `initializeRcloneService(rcloneConfig)`: (Новая) Инициализирует сервис rclone, проверяя, что необходимые библиотеки и переменные окружения доступны.
+- `testRemoteConnection(remoteName)`: (Новая) Проверяет доступность удаленного хранилища по заданному имени, используя `rclone ls`. Возвращает `RcloneConnectionResult`.
+- `copyFiles(srcRemote, srcPath, dstRemote, dstPath)`: (Новая) Выполняет операцию копирования с использованием `rclone copy`. Обрабатывает асинхронность и парсит вывод для получения `RcloneCopyResult`.
 
-Type System Changes: Implementation of global interfaces for standardized logging, advanced data validation schema, and utility structures.
+Classes
+- RcloneManager: (Новый класс в `rcloneTools.cjs`) Инкапсулирует все методы rclone API, обеспечивая единую точку входа и управление состоянием соединений.
 
-**1. `CentralizedUtils` Types:**
+Dependencies
+Не требуются изменения сторонних зависимостей, так как rclone является внешним CLI инструментом. Однако необходимо убедиться, что в окружении присутствуют `rclone` CLI и что модуль `rcloneTools.cjs` может корректно запускать системные команды.
 
-* `formatDate(date: Date | string, format: string): string`: Standardized date string output.
-* `sanitizeString(input: any): string`: Cleans and trims input strings.
-* `deepMerge(target: Object, source: Object): Object`: Recursively merges source into target.
+Testing
+Необходимо добавить модульные тесты в `__tests__/rcloneTools.test.cjs` для:
+1. Проверки успешного выполнения `rclone ls` для заданного remotes.
+2. Проверки успешного и корректного парсинга вывода `rclone copy`.
+3. Проверки обработки ошибок, таких как не найденный remote или нет доступа.
 
-**2. `DataValidator` Schema:**
-
-* `ValidationSchema`: Defines expected field name (string), type (enum: 'string' | 'number' | 'boolean' | 'object').
-* `ValidationResult`: Holds boolean `isValid` and an array of error messages.
-
-## 3. ProcessedDataFormat
-
-The core structure for data used across the application, ensuring type consistency:
-
-* `recordId: string`
-* `timestamp: Date`
-* `dataPayload: { [key: string]: any }`
-
-## 4. ModuleIntegration
-
-All new components must consume the `ProcessedDataFormat` and rely on the `ValidationResult` for data integrity checks before processing logic.
-
-</p>
-```
-</p>
-
-**[Self-correction]** I realized I wrapped the markdown in extra p tags. I will correct this in the final output structure.
-
-```markdown
-# [Plan]
-...
-```
-
-I will proceed with the structure I drafted previously.
-
-```markdown
-# [Plan]
-## 1. Data Structure
-The core structure for data used across the application, ensuring type consistency:
-- `recordId: string`
-- `timestamp: Date`
-- `dataPayload: { [key: string]: any }`
-```
+Implementation Order
+1.  Создание `src/utils/rclone-cli-wrapper.js` для нормализации вызовов CLI и парсинга JSON.
+2.  Реализация класса `RcloneManager` в `rcloneTools.cjs` с методом `initializeRcloneService`.
+3.  Реализация функции `testRemoteConnection(remoteName)` для проверки связи.
+4.  Реализация функции `copyFiles(srcRemote, srcPath, dstRemote, dstPath)` для копирования данных.
+5.  Обновление `__tests__/rcloneTools.test.cjs` с добавлением функциональных тестов для новых методов.
