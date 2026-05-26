@@ -1,49 +1,37 @@
-// runner.js
-// Этот скрипт является точкой входа для запуска процесса копирования папки.
-// Он импортирует логику синхронизации из rcloneTools.js.
-
-// Внимание: Так как rcloneTools.js был обновлен с использованием 'import',
-// мы должны использовать соответствующий синтаксис ES Modules.
-import { rcloneTools } from './rcloneTools.js';
-
+#!/usr/bin/env node
 /**
- * Основная функция для запуска процесса копирования папки.
- * @param {string} sourcePath - Полный путь к исходной папке на Яндекс Диске.
- * @param {string} destPath - Полный путь назначения на Яндекс Диске.
+ * Главный скрипт Cline
+ * Поддерживает команды: --deploy, --scan, --upload-rrl
  */
-async function copyYandexDiskFolder(sourcePath, destPath) {
+
+const fs = require('fs/promises');
+const path = require('path');
+
+const COMMANDS = {
+    deploy: require('./runner_deploy.js'),
+    scan: require('./runner_scan.js'),
+    uploadRRL: require('./runner_upload_rrl.js')
+};
+
+async function run(args) {
+    const command = args[0];
+    const pathArg = args[1];
+
+    console.log(`\n🚀 Cline v1.0.0\n`);
+
+    if (!COMMANDS[command]) {
+        console.error(`   ❌ Неизвестная команда: ${command}`);
+        console.log(`\nДоступные команды:\n   --deploy\n   --scan\n   --upload-rrl\n`);
+        process.exit(1);
+    }
+
+    console.log(`   📋 Команда: ${command}\n`);
     try {
-        console.log("==================================================");
-        console.log(`[START] Инициализация копирования папки.`);
-        console.log(`Источник: ${sourcePath}`);
-        console.log(`Назначение: ${destPath}`);
-        console.log("==================================================");
-
-        // Вызываем реализованную функциональность, которая выполнит rclone copy
-        const result = await rcloneTools.copyDirectory(sourcePath, destPath);
-
-        if (result.success) {
-            console.log("\n==================================================");
-            console.log("✅ Копирование успешно завершено! Данные синхронизированы.");
-            console.log("==================================================");
-        } else {
-            console.error("\n==================================================");
-            console.error("❌ Процесс копирования завершился с ошибкой:", result.error);
-            console.error("==================================================");
-        }
+        await COMMANDS[command](pathArg, { sourceOldPaths: 'data-analysis' });
     } catch (error) {
-        console.error("\n==================================================");
-        console.error("🛑 Критическая ошибка при вызове rcloneTools:", error);
-        console.error("==================================================");
+        console.error(`   ❌ Ошибка: ${error.message}`);
+        process.exit(1);
     }
 }
 
-// ========================================================================
-// !!! КОНФИГУРАЦИЯ !!!
-// ОБЯЗАТЕЛЬНО ЗАМЕНИТЕ ЭТИ ПУТИ НА РЕАЛЬНЫЕ ПУТИ В ВАШЕМ ПРОФИЛЕ rclone (ya:)
-// ==============================================================================
-const YANDEX_SOURCE_FOLDER = 'Исполнительная документация/'; 
-const YANDEX_DESTINATION_FOLDER = '~/yado/ya_copy/';
-
-// Запуск функции
-copyYandexDiskFolder(YANDEX_SOURCE_FOLDER, YANDEX_DESTINATION_FOLDER);
+run(process.argv.slice(2));

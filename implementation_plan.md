@@ -7,45 +7,51 @@
 Необходимо ввести новый тип данных для метаданных ссылки РРЛ, который будет использоваться в `rcloneTools.cjs` и `migration-engine.cjs`.
 
 **Новый тип:** `RRLLinkMetadata`
-*   `sourceIdMin`: Строка, ID БС с меньшим числовым значением (Хост).
-*   `sourceIdMax`: Строка, ID БС с большим числовым значением (Зеркало).
-*   `description`: Строка, подробное описание содержимого, которое объединяют эти два БС.
-*   `originalFilesList`: Массив строк, полные пути ко всем файлам, которые были скопированы в эту ссылку.
+
+* `sourceIdMin`: Строка, ID БС с меньшим числовым значением (Хост).
+* `sourceIdMax`: Строка, ID БС с большим числовым значением (Зеркало).
+* `description`: Строка, подробное описание содержимого, которое объединяют эти два БС.
+* `originalFilesList`: Массив строк, полные пути ко всем файлам, которые были скопированы в эту ссылку.
 
 **[Files]**
-*   **Изменить:** `rcloneTools.cjs`
-    *   **Изменения:** Добавить функции `getNumericId` и `determineRRLRoles` для обработки логики Хост/Зеркало. Реализовать `generateLinkMetadata` и `formatLinkContent` для создания указателя. Обновить `copyFiles` и `getOnlyDuplicateGroups` для использования новой логики.
-*   **Изменить:** `src/engine/migration-engine.cjs`
-    *   **Изменения:** Обновить `runPlan` для вызова новой логики определения ролей и обработки РРЛ.
-*   **Создать:** `src/utils/rrlLinkCreator.js` (или `rrlLinkCreator.cjs`)
-    *   **Назначение:** Изолировать логику генерации метаданных и содержимого файла-указателя.
+
+* **Изменить:** `rcloneTools.cjs`
+  * **Изменения:** Добавить функции `getNumericId` и `determineRRLRoles` для обработки логики Хост/Зеркало. Реализовать `generateLinkMetadata` и `formatLinkContent` для создания указателя. Обновить `copyFiles` и `getOnlyDuplicateGroups` для использования новой логики.
+* **Изменить:** `src/engine/migration-engine.cjs`
+  * **Изменения:** Обновить `runPlan` для вызова новой логики определения ролей и обработки РРЛ.
+* **Создать:** `src/utils/rrlLinkCreator.js` (или `rrlLinkCreator.cjs`)
+  * **Назначение:** Изолировать логику генерации метаданных и содержимого файла-указателя.
 
 **[Functions]**
-*   **Новые функции в `rcloneTools.cjs`:**
-    *   `getNumericId(rawId)`: Принимает сырой ID (строка), извлекает и возвращает его числовое значение.
-    *   `determineRRLRoles(idA, idB)`: Определяет, какой из двух ID является Хостом (min) и Зеркалом (max) на основе числового сравнения.
-    *   `generateLinkMetadata(sourceIdMin, sourceIdMax, description, files)`: Создает объект метаданных для ссылки РРЛ.
-    *   `formatLinkContent(metadata)`: Форматирует метаданные в готовый текст для файла-указателя.
-*   **Измененные функции в `rcloneTools.cjs`:**
-    *   `copyFiles(sourceRemote, srcPath, destRemote, dstPath)`: Добавить логику проверки, является ли целевая папка РРЛ, и при необходимости вызывать `rrlLinkCreator.js` для создания указателя.
-    *   `getOnlyDuplicateGroups()`: Добавить этап, где для каждой группы дубликатов, которая должна быть объединенной в РРЛ, вызывается логика `determineRRLRoles` и `generateLinkMetadata`.
-*   **Измененные функции в `src/engine/migration-engine.cjs`:**
-    *   `runPlan(fileList)`: После определения категории, если файл является частью РРЛ, необходимо вызвать логику определения ролей и запустить процесс создания ссылки.
+
+* **Новые функции в `rcloneTools.cjs`:**
+  * `getNumericId(rawId)`: Принимает сырой ID (строка), извлекает и возвращает его числовое значение.
+  * `determineRRLRoles(idA, idB)`: Определяет, какой из двух ID является Хостом (min) и Зеркалом (max) на основе числового сравнения.
+  * `generateLinkMetadata(sourceIdMin, sourceIdMax, description, files)`: Создает объект метаданных для ссылки РРЛ.
+  * `formatLinkContent(metadata)`: Форматирует метаданные в готовый текст для файла-указателя.
+* **Измененные функции в `rcloneTools.cjs`:**
+  * `copyFiles(sourceRemote, srcPath, destRemote, dstPath)`: Добавить логику проверки, является ли целевая папка РРЛ, и при необходимости вызывать `rrlLinkCreator.js` для создания указателя.
+  * `getOnlyDuplicateGroups()`: Добавить этап, где для каждой группы дубликатов, которая должна быть объединенной в РРЛ, вызывается логика `determineRRLRoles` и `generateLinkMetadata`.
+* **Измененные функции в `src/engine/migration-engine.cjs`:**
+  * `runPlan(fileList)`: После определения категории, если файл является частью РРЛ, необходимо вызвать логику определения ролей и запустить процесс создания ссылки.
 
 **[Classes]**
-*   **Изменений нет.**
+
+* **Изменений нет.**
 
 **[Dependencies]**
 Не требуются новые внешние зависимости. Будет использоваться только `rcloneTools.cjs` и `src/utils/rrlLinkCreator.js`.
 
 **[Testing]**
 Необходимо создать следующие тесты:
-1.  **Unit Tests для `rcloneTools.cjs`**: Тестирование `getNumericId` с различными форматами ID (число, буквы, кириллица, смешанный).
-2.  **Unit Tests для `rrlLinkCreator.js`**: Проверка корректности генерации метаданных и содержимого файла-указателя.
-3.  **Integration Tests для `migration-engine.cjs`**: Тестирование полного цикла: от получения метаданных до определения ролей и успешного вызова `rclone copy` и создания указателя.
+
+1. **Unit Tests для `rcloneTools.cjs`**: Тестирование `getNumericId` с различными форматами ID (число, буквы, кириллица, смешанный).
+2. **Unit Tests для `rrlLinkCreator.js`**: Проверка корректности генерации метаданных и содержимого файла-указателя.
+3. **Integration Tests для `migration-engine.cjs`**: Тестирование полного цикла: от получения метаданных до определения ролей и успешного вызова `rclone copy` и создания указателя.
 
 **[Implementation Order]**
-1.  Реализовать вспомогательные функции `getNumericId` и `determineRRLRoles` в `rcloneTools.cjs`.
-2.  Создать и реализовать модуль `rrlLinkCreator.js` с функциями `generateLinkMetadata` и `formatLinkContent`.
-3.  Обновить `rcloneTools.cjs` для использования новой логики при обнаружении дубликатов и при копировании файлов в целевые папки.
-4.  Обновить `src/engine/migration-engine.cjs` для интеграции логики определения ролей и запуска процесса создания указателей РРЛ.
+
+1. Реализовать вспомогательные функции `getNumericId` и `determineRRLRoles` в `rcloneTools.cjs`.
+2. Создать и реализовать модуль `rrlLinkCreator.js` с функциями `generateLinkMetadata` и `formatLinkContent`.
+3. Обновить `rcloneTools.cjs` для использования новой логики при обнаружении дубликатов и при копировании файлов в целевые папки.
+4. Обновить `src/engine/migration-engine.cjs` для интеграции логики определения ролей и запуска процесса создания указателей РРЛ.

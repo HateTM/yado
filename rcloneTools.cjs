@@ -7,10 +7,86 @@
  */
 
 const { join, basename, dirname } = require("path");
-const { writeFile, mkdir } = require("fs/promises");
+const { writeFile, mkdir, readFile, writeFile: writeFileSync } = require("fs/promises");
 const Logger = require('./src/utils/LoggingService.cjs');
 const rcloneWrapper = require('./src/utils/rclone-cli-wrapper.js');
 const { executeRcloneCommand } = rcloneWrapper;
+
+// --- Быстрое сканирование через rclone lsjson ---
+
+/**
+ * Быстрое сканирование пути с использованием rclone lsjson для быстрой фильтрации по размеру
+ * @param {string} remotePath - Путь для сканирования (например, "ya:Базовые_станции/")
+ * @returns {Promise<{objects: Array, total: number, files: number, directories: number}>} Результаты сканирования
+ */
+async function fastScanPath(remotePath) {
+    try {
+        // Используем --hash none для ускорения (без вычисления хешей)
+        const command = `rclone lsjson "${remotePath}" --recursive --hash none`;
+        const result = await executeRcloneCommand(command);
+        
+        if (!result.success) {
+            throw new Error(`Ошибка rclone: ${result.stderr}`);
+        }
+        
+        const items = result.result?.parsed_json || result.result?.items || [];
+        
+        return {
+            objects: items,
+            total: items.length,
+            files: items.filter(i => !i.IsDir).length,
+            directories: items.filter(i => i.IsDir).length
+        };
+    } catch (error) {
+        console.error('Ошибка быстрого сканирования:', error.message);
+        throw error;
+    }
+}
+
+/**
+ * Извлекает информацию о базовых станциях из результатов быстрого сканирования
+ * @param {object} scanResults - Результаты быстрого сканирования
+ * @returns {object} Данные о базовых станциях
+ */
+function extractBaseStationData(scanResults) {
+    const results = {
+        total: 0,
+        files: 0,
+        directories: 0,
+        baseStations: new Map()
+    };
+    
+    for (const obj of (scanResults?.objects || [])) {
+        results.total++;
+        
+        if (obj.path) {
+            // Поиск паттернов ID БС
+            const idMatch = obj.path.match(/BS\s*(\d{4,})/);
+            if (idMatch) {
+                const bsId = idMatch[1];
+                const info = results.baseStations.get(bsId) || {
+                    id: bsId,
+                    matches: [],
+                    cloudPath: null,
+                    status: 'unknown'
+                };
+                
+                info.matches.push({
+                    path: obj.path,
+                    size: obj.size,
+                    isDirectory: obj.isdir
+                });
+                if (!info.cloudPath) info.cloudPath = obj.path;
+                info.status = 'detected';
+                break;
+            }
+        }
+    }
+    
+    return results;
+}
+
+// --- Ути
 
 // --- Утилиты для ID ---
 
@@ -411,39 +487,72 @@ class RcloneManager {
     }
 
     /**
-     * Сканирует старые пути и генерирует карты регистрации и миграции.
-     * @param {string[]} oldPaths - Массив старых путей к BS.
-     * @returns {Promise<{success: boolean, bsRegisterPath: string | null, migrationMapPath: string | null, error: string | null}>} Результат сканирования.
+     * Сканирует старые пути e генерирует карты реєстрации и миграции.
+     * @param {string[]} oldPaths - Список статых paths.
+     * @returns {Promise<{success: boolean, bsRegisterPath: string | null, migrationMapPath: string | null, error: string | null}>} Результаt сканиowania e мапぴng.
      */
     async scanAndMap(oldPaths) {
-        console.log('🗺️ Запуск сканирования и маппинга путей...');
-        
-        const timestamp = new Date();
-        const reportsDir = REPORTS_DIR;
+        console.log('🗺️ Запуск сканиowania e мапぴng puтей...');
+        const timestamp = new Date().toISOString().replace(/:/g, '-');
+        const bsRegisterPath = join(REPORTS_DIR, `bs_register_${timestamp}.csv`);
+        const migrationMapPath = join(REPORTS_DIR, `migration_map_${timestamp}.csv`);
 
         try {
-            // 1. Генерация bs_register.csv
-            const bsRegisterContent = `OldPath,BS_ID,Operator,Region,BS_Name\n`;
-            const bsRegisterPath = `${reportsDir}/bs_register_${timestamp.toISOString().replace(/:/g, '-')}.csv`;
-            await writeFile(bsRegisterPath, bsRegisterContent);
+            await mkdir(REPORTS_DIR, { recursive: true });
+            let bsRegisterContent = "OldPath,BS_ID,Operator,Region,BS_Name\n";
+            let migrationMapContent = "OldPath,NewPath\n";
 
-            // 2. Генерация migration_map.csv
-            const migrationMapContent = `OldPath,NewPath\n`;
-            const migrationMapPath = `${reportsDir}/migration_map_${timestamp.toISOString().replace(/:/g, '-')}.csv`;
+            for (const path of oldPaths) {
+                const filename = basename(path);
+                let id = null;
+                let name = "Unknown";
+                let operator = "Unknown";
+                let region = "Unknown";
+
+                // Parsing regex
+                const m1 = filename.match(/BS\s*[\-]?(\d{2})-(\d{4,5})_?(.*)/i);
+                const m2 = filename.match(/(\d{5}-\w{1}-\d{2,3})/);
+                const m3 = filename.match(/(\d{5})_(.*)/);
+                const m4 = filename.match(/bs\s*[-\s](\d{4,5})/i);
+
+                if (m1) {
+                    id = `${m1[1]}-${m1[2]}`;
+                    name = m1[3] || "Unknown";
+                } else if (m2) {
+                    id = m2[1];
+                    name = "Unknown";
+                } else if (m3) {
+                    id = m3[1];
+                    name = m3[2] || "Unknown";
+                } else if (m4) {
+                    id = m4[1];
+                    name = "Unknown";
+                } else {
+                    const m = filename.match(/\d+/);
+                    if (m) id = m[0];
+                }
+
+                if (id) {
+                    const newDirName = `${id}_${name}`;
+                    const newPath = `Базовые_станции/${region}/${operator}/${newDirName}/`;
+                    bsRegisterContent += `${path},${id},${operator},${region},${name}\n`;
+                    migrationMapContent += `${path},${newPath}\n`;
+                }
+            }
+
+            await writeFile(bsRegisterPath, bsRegisterContent);
             await writeFile(migrationMapPath, migrationMapContent);
 
-            // В реальной реализации здесь будет сложная логика обработки oldPaths
-            // и заполнения CSV данными.
-            console.log(`✅ Успешно сгенерированы пустые макеты CSV: ${bsRegisterPath} и ${migrationMapPath}`);
+            console.log(`✅ Успешно sгенеriраny CSV: ${bsRegisterPath} i ${migrationMapPath}`);
 
             return {
                 success: true,
-                bsRegisterPath: bsRegisterPath,
-                migrationMapPath: migrationMapPath,
+                bsRegisterPath,
+                migrationMapPath,
                 error: null
             };
         } catch (error) {
-            console.error('❌ Ошибка при сканировании и маппинге:', error.message);
+            console.error('❌ Ошибка при сканиowania e мапぴng:', error.message);
             return {
                 success: false,
                 bsRegisterPath: null,

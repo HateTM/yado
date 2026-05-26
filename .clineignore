@@ -1,13 +1,31 @@
+# Dependencies
+
 node_modules/
-.git/
-.vscode/
-coverage/
-__tests__/
-test-data/
-reports/
-ya_copy/
-yado/
-copied_data/
-treeFile.txt
-treeFile.csv
-*.log
+**/node_modules/
+
+# Build outputs
+
+/build/
+/dist/
+/.next/
+/out/
+
+# Testing artifacts
+
+/coverage/
+
+# Environment variables
+
+.env
+.env.*
+
+# Large data files
+
+*.csv
+*.xlsx
+*.sqlite
+
+# Generated/minified code
+
+*.min.js
+*.map

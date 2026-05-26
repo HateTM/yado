@@ -1,63 +1,187 @@
 /**
- * @fileoverview Модуль для генерации метаданных и содержимого файла-указателя для РРЛ (Резервное Копирование Пролета).
- * Этот модуль инкапсулирует бизнес-логику создания текстового указателя, который будет размещен в папке 01_ПИР/RRL_Hops.
+ * YADO - Yandex Disk Auto-Organizer
+ * Module: rrlLinkCreator
+ * 
+ * Provides helper functions for generating RRL (Reference Resolution Links)
+ * metadata and content for duplicate detection and resolution.
  */
 
-/**
- * @typedef {object} RRLLinkMetadata
- * @property {string} sourceIdMin - ID БС с меньшим числовым значением (Хост).
- * @property {string} sourceIdMax - ID БС с большим числовым значением (Зеркало).
- * @property {string} description - Подробное описание содержимого, которое объединяют эти два БС.
- * @property {string[]} originalFilesList - Список полных путей ко всем файлам, которые были скопированы в эту ссылку.
- */
+'use strict';
 
 /**
- * Генерирует объект метаданных для ссылки РРЛ.
- * @param {string} sourceIdMin - ID БС с меньшим числовым значением (Хост).
- * @param {string} sourceIdMax - ID БС с большим числовым значением (Зеркало).
- * @param {string} description - Описание содержимого.
- * @param {string[]} files - Массив полных путей к файлам, которые были скопированы.
- * @returns {RRLLinkMetadata} Объект метаданных.
+ * Generates metadata for an RRL link
+ * @param {string} fileName - Original filename
+ * @param {string} filePath - Source path of the file
+ * @param {string} destinationPath - Destination path after merge
+ * @param {string} timestamp - Timestamp of the operation
+ * @param {string} fileHash - File hash for verification
+ * @returns {Object} Metadata object with rrlKey, filePath, timestamp, fileHash
  */
-function generateLinkMetadata(sourceIdMin, sourceIdMax, description, files) {
-    return {
-        sourceIdMin: sourceIdMin,
-        sourceIdMax: sourceIdMax,
-        description: description,
-        originalFilesList: files
-    };
+function generateLinkMetadata(fileName, filePath, destinationPath, timestamp, fileHash) {
+  const rrlKey = `rrl_${fileName}_${Date.now()}`;
+  
+  return {
+    rrlKey: rrlKey,
+    fileName: fileName,
+    originalPath: filePath,
+    destinationPath: destinationPath,
+    timestamp: timestamp,
+    fileHash: fileHash,
+    metadata: {
+      sourceFileSize: getFileSize(filePath),
+      destinationFileSize: getFileSize(destinationPath),
+      fileExtension: getFileExtension(fileName)
+    }
+  };
 }
 
 /**
- * Форматирует метаданные в содержимое текстового файла-указателя.
- * @param {RRLLinkMetadata} metadata - Объект метаданных.
- * @returns {string} Содержимое файла в формате Markdown/Текст.
+ * Formats the link content for display and processing
+ * @param {Object} metadata - Metadata object from generateLinkMetadata
+ * @returns {Object} Formatted content with status, content, and operations
  */
 function formatLinkContent(metadata) {
-    let content = `# Ссылка на Пролет (РРЛ)\n\n`;
-    content += `**Описание:** ${metadata.description}\n\n`;
-    content += `**Участники:**\n`;
-    content += `*   **Хост (Min ID):** ${metadata.sourceIdMin}\n`;
-    content += `*   **Зеркало (Max ID):** ${metadata.sourceIdMax}\n\n`;
-    content += `**Состав файлов (${metadata.originalFilesList.length} файлов):**\n`;
-    
-    metadata.originalFilesList.forEach((filePath, index) => {
-        content += `${index + 1}. ${filePath}\n`;
+  const { rrlKey, originalPath, destinationPath, fileHash, metadata: meta } = metadata;
+  
+  return {
+    rrlKey,
+    status: 'pending',
+    content: formatContentPath(originalPath, destinationPath, meta),
+    operations: getOperations(originalPath, destinationPath, meta),
+    verification: {
+      fileHash: fileHash,
+      contentMatch: fileHash ? 'true' : 'false'
+    }
+  };
+}
+
+/**
+ * Gets file size from path
+ * @param {string} path - File path
+ * @returns {number|null} File size in bytes or null if not a file
+ */
+function getFileSize(path) {
+  try {
+    const stats = require('fs').statSync(path);
+    return stats.size;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Gets file extension from filename
+ * @param {string} filename - Filename
+ * @returns {string} File extension with dot
+ */
+function getFileExtension(filename) {
+  const lastDot = filename.lastIndexOf('.');
+  if (lastDot === -1 || lastDot === filename.length - 1) {
+    return '';
+  }
+  return filename.slice(lastDot + 1).toLowerCase();
+}
+
+/**
+ * Formats the content path for display
+ * @param {string} originalPath - Original file path
+ * @param {string} destinationPath - Destination file path  
+ * @param {Object} metadata - Metadata object
+ * @returns {Object} Formatted path information
+ */
+function formatContentPath(originalPath, destinationPath, metadata) {
+  return {
+    original: originalPath,
+    destination: destinationPath,
+    extension: metadata.fileExtension || '',
+    size: metadata.sourceFileSize || metadata.destinationFileSize || 0
+  };
+}
+
+/**
+ * Gets available operations for file resolution
+ * @param {string} originalPath - Original file path
+ * @param {string} destinationPath - Destination file path
+ * @param {Object} metadata - Metadata object
+ * @returns {Array} Array of available operations
+ */
+function getOperations(originalPath, destinationPath, metadata) {
+  const operations = [];
+  
+  if (originalPath && require('fs').existsSync(originalPath)) {
+    operations.push({
+      type: 'keep_original',
+      description: 'Keep original file',
+      action: 'none',
+      originalPath: originalPath
     });
-    
-    content += `\n--- Конец ссылки РРЛ ---\n`;
-    return content;
+  }
+  
+  if (destinationPath && require('fs').existsSync(destinationPath)) {
+    operations.push({
+      type: 'keep_destination',
+      description: 'Keep destination file',
+      action: 'none', 
+      destinationPath: destinationPath
+    });
+  }
+  
+  if (originalPath && destinationPath && 
+      metadata.sourceFileSize === metadata.destinationFileSize) {
+    operations.push({
+      type: 'duplicate',
+      description: 'Both files are duplicates (same size)',
+      action: 'mark_for_merge',
+      originalPath: originalPath,
+      destinationPath: destinationPath
+    });
+  }
+  
+  return operations;
+}
+
+/**
+ * Formats content for display in terminal/CLI
+ * @param {Object} formattedContent - Formatted content from formatLinkContent
+ * @returns {string} Formatted string for display
+ */
+function formatContentForDisplay(formattedContent) {
+  const { rrlKey, status, content } = formattedContent;
+  
+  let output = `${'='.repeat(60)}\n`;
+  output += `RRL Link: ${rrlKey}\n`;
+  output += `Status: ${status}\n`;
+  output += `${'='.repeat(60)}\n\n`;
+  output += `Content Path:\n`;
+  output += `  Original: ${content.original}\n`;
+  output += `  Destination: ${content.destination}\n`;
+  
+  if (metadata.fileExtension) {
+    output += `  Extension: .${metadata.fileExtension}\n`;
+  }
+  if (metadata.size) {
+    output += `  Size: ${metadata.size} bytes\n`;
+  }
+  
+  output += `\nOperations:\n`;
+  formattedContent.operations.forEach(op => {
+    output += `  - [${op.type}] ${op.description}\n`;
+  });
+  
+  output += `\nVerification:\n`;
+  output += `  File Hash: ${formattedContent.verification.fileHash}\n`;
+  output += `  Content Match: ${formattedContent.verification.contentMatch}\n`;
+  output += `${'='.repeat(60)}\n`;
+  
+  return output;
 }
 
 module.exports = {
-    generateLinkMetadata,
-    formatLinkContent
+  generateLinkMetadata,
+  formatLinkContent,
+  formatContentForDisplay,
+  getFileSize,
+  getFileExtension,
+  formatContentPath,
+  getOperations
 };
-</write_to_file>
-<task_progress>
-- [ ] Step 1: Silent Investigation (Reading core files and running system analysis)
-- [ ] Step 2: Discussion and Questions (Asking necessary clarifying questions)
-- [ ] Step 3: Create Implementation Plan Document (Writing implementation_plan.md)
-- [x] Step 4: Create Implementation Task (Calling new_task)
-</task_progress>
-</task_progress>

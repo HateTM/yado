@@ -7,6 +7,8 @@
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const execPromise = promisify(exec);
+const fs = require('fs/promises');
+const path = require('path');
 
 /**
  * Оборачивает выполнение команды rclone и возвращает структурированный результат.
@@ -82,7 +84,69 @@ async function checkRcloneAvailability() {
     }
 }
 
+/**
+ * Выполняет специфическую команду rclone для операций с RRL.
+ * Обрабатывает копирование оригинала в БС с меньшим ID и создание .txt ссылки в БС с большим ID.
+ * 
+ * @param {string} command - Команда rclone (например, 'rclone copyto yandex_disk:Базовые_станции/[Регион]/[Оператор]/[ID]/01_ПИР/RRL_Hops/имя.pdf')
+ * @returns {Promise<{success: boolean, originalCopied: boolean, linkCreated: boolean, originalPath: string, linkPath: string}>}
+ */
+async function executeRcloneCommandForRRL(command) {
+    console.log(`[rclone-wrapper] RRL-операция: ${command}`);
+    try {
+        const { stdout, stderr } = await execPromise(command, { maxBuffer: 1024 * 1024 * 10 });
+        
+        // Проверяем, успешно ли выполнилась команда
+        if (stdout.includes('Failed') || stderr.includes('Failed')) {
+            return {
+                success: false,
+                originalCopied: false,
+                linkCreated: false,
+                originalPath: '',
+                linkPath: '',
+                error: stdout + stderr
+            };
+        }
+        
+        return {
+            success: true,
+            originalCopied: true,
+            linkCreated: true,
+            originalPath: command.match(/rclone copy [^\s]+/)?.[0] || '',
+            linkPath: command.match(/rclone link [^\s]+/)?.[0] || '',
+            output: stdout.trim()
+        };
+    } catch (error) {
+        console.error(`[rclone-wrapper] RRL-ошибка: ${error.message}`);
+        return {
+            success: false,
+            originalCopied: false,
+            linkCreated: false,
+            originalPath: '',
+            linkPath: '',
+            error: error.message
+        };
+    }
+}
+
+/**
+ * Проверяет, что rclone установлен и доступен в PATH.
+ * @returns {Promise<boolean>} True, если rclone доступен.
+ */
+async function checkRcloneAvailability() {
+    console.log("[rclone-wrapper] Проверка доступности rclone...");
+    try {
+        // Простая команда для проверки версии
+        await execPromise('rclone version');
+        return true;
+    } catch (e) {
+        console.error("[rclone-wrapper] rclone CLI не найден или недоступен.", e.message);
+        return false;
+    }
+}
+
 module.exports = {
     executeRcloneCommand,
-    checkRcloneAvailability
+    checkRcloneAvailability,
+    executeRcloneCommandForRRL
 };
