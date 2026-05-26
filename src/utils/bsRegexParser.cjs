@@ -11,10 +11,6 @@
 /**
  * Парсит старый идентификатор БС по регулярному выражению.
  *
- * Предполагаемая структура старого ID:
- * 1. Может содержать регион и ID в произвольном порядке, разделенные дефисами или другими символами.
- * 2. Наша цель - извлечь регион (2 цифры) и уникальный номер (буквы/цифры).
- *
  * @param {string} rawId - Сырая строка с ID.
  * @returns {BSRegisterEntry | null} Объект с унифицированными данными или null, если парсинг не удался.
  */
@@ -23,9 +19,6 @@ const parseBSID = (rawId) => {
         return null;
     }
 
-    // Регулярное выражение для извлечения региона (XX) и номера (alphanumeric).
-    // Это упрощенный пример, так как реальная логика должна быть более сложной.
-    // Поиск двух цифр, которые, вероятно, являются кодом региона, и далее последовательности букв/цифр.
     const regex = /(?:BS|BSR)?(?<region>\d{2})[-_]*[A-Z0-9]+(?<number>[A-Z0-9]+)/i;
     const match = rawId.match(regex);
 
@@ -45,7 +38,7 @@ const parseBSID = (rawId) => {
 };
 
 /**
- * Получает список БSRegisterEntry из массива сырых ID.
+ * Получает список BSRegisterEntry из массива сырых ID.
  * @param {string[]} rawIds - Массив сырых ID.
  * @returns {BSRegisterEntry[]} Массив объектов BSRegisterEntry.
  */
@@ -56,7 +49,24 @@ const getBSRegisterEntries = (rawIds) => {
     return rawIds.map(id => parseBSID(id)).filter(entry => entry !== null);
 };
 
+/**
+ * Извлекает и стандартизирует BSUID из имени файла/пути.
+ * Используется модулем file-system.cjs.
+ *
+ * @param {string} relativePath - Относительный путь к файлу.
+ * @returns {Promise<{bsuid: string|null}>} Объект с полем bsuid (стандартизированный ID или null).
+ */
+async function extractAndStandardizeBSUID(relativePath) {
+    // Берём только имя файла без расширения для поиска ID
+    const fileName = require('path').basename(relativePath, require('path').extname(relativePath));
+    const entry = parseBSID(fileName);
+    return {
+        bsuid: entry ? entry.standardId : null
+    };
+}
+
 module.exports = {
-  parseBSID,
-  getBSRegisterEntries
+    parseBSID,
+    getBSRegisterEntries,
+    extractAndStandardizeBSUID
 };

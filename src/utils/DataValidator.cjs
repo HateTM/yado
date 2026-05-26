@@ -1,114 +1,74 @@
 /**
- * @fileoverview Utility for standardizing schema validation and data type checking.
- * Ensures data integrity before processing core business logic.
- * @module DataValidator
+ * @fileoverview Валидатор данных для проверки структуры метаданных.
  */
 
-/**
- * Validates if a value is a non-empty string.
- * @param {*} value - The value to check.
- * @returns {boolean} True if the value is a non-empty string, false otherwise.
- */
-function isNonEmptyString(value) {
-    return typeof value === 'string' && value.trim().length > 0;
-}
+class DataValidator {
+    /**
+     * Проверяет структуру метаданных файла и возвращает результат с деталями.
+     * @param {Object} meta - Метаданные файла.
+     * @returns {Object} Объект с флагом валидности и списком ошибок.
+     */
+    static validateFileMetadata(meta) {
+        const errors = [];
 
-/**
- * Validates if a value is a number, excluding NaN and non-finite numbers.
- * @param {*} value - The value to check.
- * @returns {boolean} True if the value is a finite number, false otherwise.
- */
-function isFiniteNumber(value) {
-    return typeof value === 'number' && isFinite(value);
-}
+        // Базовая проверка существования и типа
+        if (!meta) {
+            errors.push('Metadata is undefined or null');
+            return { isValid: false, errors };
+        }
 
-/**
- * Validates if a value is an array.
- * @param {*} value - The value to check.
- * @returns {boolean} True if the value is an array, false otherwise.
- */
-function isArray(value) {
-    return Array.isArray(value);
-}
+        if (typeof meta !== 'object') {
+            errors.push('Metadata must be an object');
+            return { isValid: false, errors };
+        }
 
-/**
- * Performs a deep validation of a record against a defined schema.
- * This function is a placeholder for more complex schema validation logic (e.g., using Joi or Zod).
- * @param {object} record - The data record to validate.
- * @param {object} schema - The schema definition: { fieldName: { type: 'string'|'number'|'array', required: boolean } }
- * @returns {{isValid: boolean, errors: string[]}} An object containing validation status and list of errors.
- */
-function validateRecord(record, schema) {
-    const errors = [];
-    let isValid = true;
+        // Проверка обязательных путей
+        if (!meta.relativePath && !meta.path) {
+            errors.push('Missing both relativePath and path');
+        } else if (meta.relativePath === '' || meta.path === '') {
+            errors.push('relativePath or path is an empty string');
+        }
 
-    if (typeof record !== 'object' || record === null) {
-        errors.push('Record must be a non-null object.');
-        return { isValid: false, errors };
-    }
-
-    for (const fieldName in schema) {
-        if (Object.hasOwnProperty.call(schema, fieldName)) {
-            const fieldSchema = schema[fieldName];
-            const value = record[fieldName];
-            const required = fieldSchema.required !== false; // Default to required
-
-            // Check for required field
-            if (required && (typeof value === 'undefined' || value === null || (typeof value === 'string' && value.trim() === ''))) {
-                errors.push(`Missing or empty required field: ${fieldName}.`);
-                isValid = false;
-                continue;
-            }
-
-            // Check type validation if value exists
-            if (value !== undefined && value !== null) {
-                let typeError = false;
-                switch (fieldSchema.type) {
-                    case 'string':
-                        if (typeof value !== 'string') {
-                            typeError = true;
-                        }
-                        break;
-                    case 'number':
-                        if (typeof value !== 'number' || !isFiniteNumber(value)) {
-                            typeError = true;
-                        }
-                        break;
-                    case 'array':
-                        if (!isArray(value)) {
-                            typeError = true;
-                        }
-                        break;
-                    default:
-                    // No specific type check defined
-                }
-
-                if (typeError) {
-                    errors.push(`Field '${fieldName}' must be of type '${fieldSchema.type}'. Found: ${typeof value}.`);
-                    isValid = false;
-                }
+        // Проверка размера файла (если присутствует)
+        if ('size' in meta) {
+            if (typeof meta.size !== 'number' || meta.size < 0) {
+                errors.push('Invalid size: must be a non-negative number');
             }
         }
+
+        // Проверка времени модификации (если присутствует)
+        if ('mtime' in meta) {
+            const mtime = new Date(meta.mtime);
+            if (isNaN(mtime.getTime())) {
+                errors.push('Invalid mtime: not a valid date');
+            }
+        }
+
+        // Проверка расширения файла (если присутствует)
+        if ('extension' in meta && typeof meta.extension !== 'string') {
+            errors.push('Invalid extension: must be a string');
+        }
+
+        // Проверка других потенциально важных полей
+        if ('type' in meta && typeof meta.type !== 'string') {
+            errors.push('Invalid type: must be a string');
+        }
+
+        return {
+            isValid: errors.length === 0,
+            errors,
+            meta
+        };
     }
 
-    return { isValid: errors.length === 0, errors };
+    /**
+     * Упрощённая проверка — возвращает только boolean.
+     * @param {Object} meta - Метаданные файла.
+     * @returns {boolean} true, если метаданные валидны.
+     */
+    static isValidFileMetadata(meta) {
+        return this.validateFileMetadata(meta).isValid;
+    }
 }
 
-/**
- * Schema example for migration records.
- * @type {object}
- */
-const MIGRATION_SCHEMA = {
-    recordId: { type: 'string', required: true },
-    sourceSystem: { type: 'string', required: true },
-    timestamp: { type: 'number', required: true },
-    dataPayload: { type: 'object', required: false }
-};
-
-module.exports = {
-    isNonEmptyString,
-    isFiniteNumber,
-    isArray,
-    validateRecord,
-    MIGRATION_SCHEMA
-};
+module.exports = DataValidator;

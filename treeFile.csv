@@ -1,0 +1,33 @@
+[01;34m.[0m
+├── .clineignore
+├── [01;34m.clinerules[0m
+├── [01;34m.git[0m
+├── [01;34m.vscode[0m
+├── README.md
+├── [01;34m__tests__[0m
+├── agentPrompt.js
+├── [01;34mcopied_data[0m
+├── [01;34mcoverage[0m
+├── [01;34mdocs[0m
+├── eslint.config.js
+├── eslint.config.ts
+├── implementation_plan.md
+├── index.js
+├── migrationEngine.js
+├── [01;34mnode_modules[0m
+├── package-lock.json
+├── package.json
+├── projectbrief.md
+├── rcloneTools.cjs
+├── [01;34mreports[0m
+├── runner.js
+├── [01;34msrc[0m
+├── [01;34mtest-data[0m
+├── test_export.js
+├── treeFile.csv
+├── treeFile.txt
+├── tsconfig.json
+├── [01;34mya_copy[0m
+└── [01;34myado[0m
+
+14 directories, 17 files

@@ -3,425 +3,275 @@
  * Обрабатывает аргументы командной строки и запускает MigrationEngine.
  */
 
-const fs = require('fs');
+const fs = require('fs').promises;
 const path = require('path');
-const getBatchFileMetadata = require('./src/utils/file-system.cjs');
+const { getBatchFileMetadata } = require('./src/utils/file-system.cjs');
 const MigrationEngine = require('./src/engine/migration-engine.cjs');
-const DetectionService = require('./src/services/detection-service.cjs');
+const DetectionService = require('./src/services/detection-service.cjs'); // Исправленный импорт
+const RcloneManager = require('./rcloneTools.cjs'); // Импортируем исправленный RcloneManager
+const { executeRcloneCommand } = require('./src/utils/rclone-cli-wrapper.js');
+// --- Константы ---
+const REMOTE = 'ya:';
+const REPORTS_DIR = 'reports';
 
-// --- Инициализация Rclone Manager ---
-/**
- * @class RcloneManager
- * @description Инкапсулирует все API-вызовы rclone, обеспечивая единую точку входа и управление состоянием соединений.
- */
-class RcloneManager {
-    /**
-     * @param {string} remoteName - Имя rclone репозитория (e.g., "ya:").
-     * @param {object} rcloneWrapper - Экземпляр RcloneWrapper.
-     */
-    constructor(remoteName, rcloneWrapper) {
-        this.remoteName = remoteName;
-        this.wrapper = rcloneWrapper;
-    }
+// Экземпляр RcloneManager
+const rcloneManager = new RcloneManager(REMOTE, require('./src/utils/rclone-cli-wrapper.js'));
 
-    /**
-     * Инициализирует сервис rclone.
-     * @returns {Promise<boolean>} true, если сервис доступен.
-     */
-    async initializeRcloneService() {
-        console.log("⚙️ Инициализация Rclone Service...");
-        try {
-            // Проверяем подключение, пытаясь получить структурированный список содержимого.
-            const checkResult = await this.wrapper.listStructured(null, this.remoteName);
-            
-            if (!checkResult) {
-                console.error(`❌ Не удалось инициализировать сервис: ${this.remoteName} недоступен или пуст.`);
-                return false;
+async function scanRemoteDirectory(remoteName, remotePath) {
+    try {
+        const command = `rclone lsjson "${remoteName}${remotePath}" --dirs-only`;
+        const result = await executeRcloneCommand(command);
+
+        if (!result.success) {
+            throw new Error(`Rclone ошибка: ${result.error}`);
+        }
+
+        // Парсим вывод rclone lsjson
+        const items = JSON.parse(result.stdout);
+        const filePaths = [];
+
+        for (const item of items) {
+            const fullPath = `${remotePath}/${item.Path}`;
+            if (item.IsDir) {
+                // Рекурсивно сканируем подпапки
+                const subFiles = await scanRemoteDirectory(remoteName, fullPath);
+                filePaths.push(...subFiles);
+            } else {
+                filePaths.push(fullPath);
             }
-            
-            console.log(`✅ Rclone Service успешно инициализирован для ${this.remoteName}.`);
-            return true;
-        } catch (e) {
-            console.error("❌ Критическая ошибка при инициализации rclone service:", e.message);
-            return false;
         }
-    }
-
-    /**
-     * Проверяет доступность удаленного хранилища по заданному имени.
-     * @param {string} remoteName - Полное имя удаленного хранилища (e.g., "ya:").
-     * @returns {Promise<RcloneConnectionResult>} Результат проверки.
-     */
-    async testRemoteConnection(remoteName) {
-        console.log(`🩺 Проверка соединения с ${remoteName}...`);
-        try {
-            // Используем rclone lsjson для проверки существования remotes и получения метрик
-            const { stdout, stderr } = await this.wrapper.listStructured(null, remoteName);
-
-            if (stderr) {
-                console.error("❌ Ошибка rclone при проверке соединения:", stderr);
-                return { success: false, message: stderr || "Не удалось подключиться к хранилищу." };
-            }
-            
-            // Простая проверка на пустой или некорректный JSON
-            if (!stdout) {
-                return { success: false, message: "Получен пустой ответ от rclone." };
-            }
-
-            const metrics = await this.wrapper.calculateMetrics(JSON.parse(stdout));
-
-            return {
-                success: true,
-                message: `Успешно подключено. ${metrics.message}`,
-                usage: metrics.usage,
-            };
-        } catch (e) {
-            console.error("❌ Критическая ошибка при проверке соединения:", e.message);
-            return { success: false, message: `Ошибка: ${e.message}` };
-        }
-    }
-
-    /**
-     * Выполняет операцию копирования с использованием rclone copy.
-     * @param {string} sourceRemote - Удаленное хранилище источника.
-     * @param {string} srcPath - Путь источника.
-     * @param {string} destRemote - Удаленное хранилище назначения.
-     * @param {string} dstPath - Путь назначения.
-     * @returns {Promise<RcloneCopyResult>} Результат копирования.
-     */
-    async copyFiles(sourceRemote, srcPath, destRemote, dstPath) {
-        if (sourceRemote !== this.remoteName || destRemote !== this.remoteName) {
-             return { success: false, operationId: "N/A", skippedFiles: [`Both remotes must match configured remote: ${this.remoteName}`] };
-        }
-        console.log(`⚡️ Начинается копирование с ${srcPath} в ${dstPath}`);
-        
-        // Используем wrapper.copy для выполнения rclone copy
-        const result = await this.wrapper.copy(srcPath, dstPath);
-        
-        if (result.success) {
-            return { success: true, operationId: Date.now().toString(), skippedFiles: [] };
-        } else {
-            return { success: false, operationId: Date.now().toString(), skippedFiles: [`Error: ${result.error || 'Unknown copy error'}`] };
-        }
+        return filePaths;
+    } catch (error) {
+        console.error(`❌ Ошибка при сканировании удалённого каталога ${remoteName}${remotePath}:`, error.message);
+        throw error;
     }
 }
 
-// Экземпляр RcloneManager, инициализированный для работы
-const rcloneManager = new RcloneManager(REMOTE, rcloneWrapper);
-// --- Инициализация Rclone Manager ---
+
 /**
- * @class RcloneManager
- * @description Инкапсулирует все API-вызовы rclone, обеспечивая единую точку входа и управление состоянием соединений.
+ * Рекурсивно получает список абсолютных путей ко всем файлам в директории.
+ * @param {string} dir - Путь к директории.
+ * @returns {Promise<string[]>} Массив абсолютных путей к файлам.
  */
-class RcloneManager {
-    /**
-     * @param {string} remoteName - Имя rclone репозитория (e.g., "ya:").
-     * @param {object} rcloneWrapper - Экземпляр RcloneWrapper.
-     */
-    constructor(remoteName, rcloneWrapper) {
-        this.remoteName = remoteName;
-        this.wrapper = rcloneWrapper;
-    }
+async function getFilePathsRecursively(dir) {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    const files = await Promise.all(entries.map(async entry => {
+        const fullPath = path.join(dir, entry.name);
 
-    /**
-     * Инициализирует сервис rclone.
-     * @returns {Promise<boolean>} true, если сервис доступен.
-     */
-    async initializeRcloneService() {
-        console.log("⚙️ Инициализация Rclone Service...");
-        try {
-            // Проверяем подключение, пытаясь получить структурированный список содержимого.
-            const checkResult = await this.wrapper.listStructured(null, this.remoteName);
-            
-            if (!checkResult) {
-                console.error(`❌ Не удалось инициализировать сервис: ${this.remoteName} недоступен или пуст.`);
-                return false;
-            }
-            
-            console.log(`✅ Rclone Service успешно инициализирован для ${this.remoteName}.`);
-            return true;
-        } catch (e) {
-            console.error("❌ Критическая ошибка при инициализации rclone service:", e.message);
-            return false;
+        // Фильтруем мусорные записи: пропускаем пути с \, mkdir и т. д.
+        if (entry.name.includes('\\') || entry.name.includes('mkdir')) {
+            return null;
         }
-    }
 
-    /**
-     * Проверяет доступность удаленного хранилища по заданному имени.
-     * @param {string} remoteName - Полное имя удаленного хранилища (e.g., "ya:").
-     * @returns {Promise<RcloneConnectionResult>} Результат проверки.
-     */
-    async testRemoteConnection(remoteName) {
-        console.log(`🩺 Проверка соединения с ${remoteName}...`);
-        try {
-            // Используем rclone lsjson для проверки существования remotes и получения метрик
-            const { stdout, stderr } = await this.wrapper.listStructured(null, remoteName);
-
-            if (stderr) {
-                console.error("❌ Ошибка rclone при проверке соединения:", stderr);
-                return { success: false, message: stderr || "Не удалось подключиться к хранилищу." };
-            }
-            
-            // Простая проверка на пустой или некорректный JSON
-            if (!stdout) {
-                return { success: false, message: "Получен пустой ответ от rclone." };
-            }
-
-            const metrics = await this.wrapper.calculateMetrics(JSON.parse(stdout));
-
-            return {
-                success: true,
-                message: `Успешно подключено. ${metrics.message}`,
-                usage: metrics.usage,
-            };
-        } catch (e) {
-            console.error("❌ Критическая ошибка при проверке соединения:", e.message);
-            return { success: false, message: `Ошибка: ${e.message}` };
-        }
-    }
-
-    /**
-     * Выполняет операцию копирования с использованием rclone copy.
-     * @param {string} sourceRemote - Удаленное хранилище источника.
-     * @param {string} srcPath - Путь источника.
-     * @param {string} destRemote - Удаленное хранилище назначения.
-     * @param {string} dstPath - Путь назначения.
-     * @returns {Promise<RcloneCopyResult>} Результат копирования.
-     */
-    async copyFiles(sourceRemote, srcPath, destRemote, dstPath) {
-        if (sourceRemote !== this.remoteName || destRemote !== this.remoteName) {
-             return { success: false, operationId: "N/A", skippedFiles: [`Both remotes must match configured remote: ${this.remoteName}`] };
-        }
-        console.log(`⚡️ Начинается копирование с ${srcPath} в ${dstPath}`);
-        
-        // Используем wrapper.copy для выполнения rclone copy
-        const result = await this.wrapper.copy(srcPath, dstPath);
-        
-        if (result.success) {
-            return { success: true, operationId: Date.now().toString(), skippedFiles: [] };
+        if (entry.isDirectory()) {
+            return getFilePathsRecursively(fullPath);
         } else {
-            return { success: false, operationId: Date.now().toString(), skippedFiles: [`Error: ${result.error || 'Unknown copy error'}`] };
+            return fullPath;
         }
-    }
+    }));
+    // Фильтруем null и flatten массив
+    return files.flat().filter(Boolean);
 }
 
-// Экземпляр RcloneManager, инициализированный для работы
-const rcloneManager = new RcloneManager(REMOTE, rcloneWrapper);
-// --- Инициализация Rclone Manager ---
 /**
- * @class RcloneManager
- * @description Инкапсулирует все API-вызовы rclone, обеспечивая единую точку входа и управление состоянием соединений.
+ * Основная функция, которая компилирует и сохраняет план миграции по списку путей к файлам.
+ * @param {string[]} filePaths - Список абсолютных путей к файлам для анализа.
  */
-class RcloneManager {
-    /**
-     * @param {string} remoteName - Имя rclone репозитория (e.g., "ya:").
-     * @param {object} rcloneWrapper - Экземпляр RcloneWrapper.
-     */
-    constructor(remoteName, rcloneWrapper) {
-        this.remoteName = remoteName;
-        this.wrapper = rcloneWrapper;
-    }
-
-    /**
-     * Инициализирует сервис rclone.
-     * @returns {Promise<boolean>} true, если сервис доступен.
-     */
-    async initializeRcloneService() {
-        console.log("⚙️ Инициализация Rclone Service...");
-        try {
-            // Проверяем подключение, пытаясь получить структурированный список содержимого.
-            const checkResult = await this.wrapper.listStructured(null, this.remoteName);
-            
-            if (!checkResult) {
-                console.error(`❌ Не удалось инициализировать сервис: ${this.remoteName} недоступен или пуст.`);
-                return false;
-            }
-            
-            console.log(`✅ Rclone Service успешно инициализирован для ${this.remoteName}.`);
-            return true;
-        } catch (e) {
-            console.error("❌ Критическая ошибка при инициализации rclone service:", e.message);
-            return false;
-        }
-    }
-
-    /**
-     * Проверяет доступность удаленного хранилища по заданному имени.
-     * @param {string} remoteName - Полное имя удаленного хранилища (e.g., "ya:").
-     * @returns {Promise<RcloneConnectionResult>} Результат проверки.
-     */
-    async testRemoteConnection(remoteName) {
-        console.log(`🩺 Проверка соединения с ${remoteName}...`);
-        try {
-            // Используем rclone lsjson для проверки существования remotes и получения метрик
-            const { stdout, stderr } = await this.wrapper.listStructured(null, remoteName);
-
-            if (stderr) {
-                console.error("❌ Ошибка rclone при проверке соединения:", stderr);
-                return { success: false, message: stderr || "Не удалось подключиться к хранилищу." };
-            }
-            
-            // Простая проверка на пустой или некорректный JSON
-            if (!stdout) {
-                return { success: false, message: "Получен пустой ответ от rclone." };
-            }
-
-            const metrics = await this.wrapper.calculateMetrics(JSON.parse(stdout));
-
-            return {
-                success: true,
-                message: `Успешно подключено. ${metrics.message}`,
-                usage: metrics.usage,
-            };
-        } catch (e) {
-            console.error("❌ Критическая ошибка при проверке соединения:", e.message);
-            return { success: false, message: `Ошибка: ${e.message}` };
-        }
-    }
-
-    /**
-     * Выполняет операцию копирования с использованием rclone copy.
-     * @param {string} sourceRemote - Удаленное хранилище источника.
-     * @param {string} srcPath - Путь источника.
-     * @param {string} destRemote - Удаленное хранилище назначения.
-     * @param {string} dstPath - Путь назначения.
-     * @returns {Promise<RcloneCopyResult>} Результат копирования.
-     */
-    async copyFiles(sourceRemote, srcPath, destRemote, dstPath) {
-        if (sourceRemote !== this.remoteName || destRemote !== this.remoteName) {
-             return { success: false, operationId: "N/A", skippedFiles: [`Both remotes must match configured remote: ${this.remoteName}`] };
-        }
-        console.log(`⚡️ Начинается копирование с ${srcPath} в ${dstPath}`);
-        
-        // Используем wrapper.copy для выполнения rclone copy
-        const result = await this.wrapper.copy(srcPath, dstPath);
-        
-        if (result.success) {
-            return { success: true, operationId: Date.now().toString(), skippedFiles: [] };
-        } else {
-            return { success: false, operationId: Date.now().toString(), skippedFiles: [`Error: ${result.error || 'Unknown copy error'}`] };
-        }
-    }
-}
-
-// Экземпляр RcloneManager, инициализированный для работы
-const rcloneManager = new RcloneManager(REMOTE, rcloneWrapper);
-
-/**
- * Основная функция, которая компилирует и сохраняет план миграции.
- * @param {string[]} fileList - Список файлов для анализа.
- */
-async function compileMigrationPlan(fileList) {
-    console.log("\n======================================================================================");
-    console.log("         🚀 ЗАПУСК МИГРАЦИОННОГО АНАЛИЗА И СБОР ПЛАНА");
-    console.log("================================================================================================");
+async function compileMigrationPlanFromPaths(filePaths) {
+    console.log('\n======================================================================================');
+    console.log('         🚀 ЗАПУСК МИГРАЦИОННОГО АНАЛИЗА И СБОР ПЛАНА');
+    console.log('===============================================================================================');
 
     try {
         // 1. Инициализация сервисов
-        const detectionService = new DetectionService();
-        // rcloneToolsMock используется только для передачи в конструктор, 
-        // так как getBatchFileMetadata уже имитирует метаданные.
-        const mockRcloneTools = { getOnlyDuplicateGroups: async () => [] };
-module.exports = main;
-        // 2. Запуск оркестратора
-        const { plan, reports } = await migrationEngine.runPlan(fileList);
+        const detectionService = new DetectionService(); // Создаём экземпляр
+        const migrationEngine = new MigrationEngine(detectionService, rcloneManager);
 
-        // 3. Генерация и сохранение отчета
+        // 2. Запуск оркестратора
+        const result = await migrationEngine.runPlan(filePaths);
+
+        // 3. Генерация и сохранение отчёта
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const reportFileName = `migration_plan_${timestamp}.json`;
-        const reportPath = path.join('./reports', reportFileName);
+        const reportPath = path.join(REPORTS_DIR, reportFileName);
+
+        await fs.mkdir(REPORTS_DIR, { recursive: true });
 
         const finalOutput = {
             reportGeneratedAt: new Date().toISOString(),
-            sourceDirectory: 'N/A',
+            sourceDirectory: filePaths[0] ? path.dirname(filePaths[0]) : 'N/A',
             metadata: {
-                totalFilesProcessed: plan.totalFilesProcessed
+                totalFilesProcessed: result.plan.totalFilesProcessed
             },
-            migrationPlan: plan.migrationPlan,
-            classificationReports: reports
+            migrationPlan: result.plan.migrationPlan,
+            classificationReports: result.reports
         };
 
         const jsonString = JSON.stringify(finalOutput, null, 2);
-        fs.writeFileSync(reportPath, jsonString);
+        await fs.writeFile(reportPath, jsonString);
 
-        console.log("\n========================================================================================");
-        console.log("🎉 УСПЕШНО СОЗДАНО: План миграции.");
-        console.log(`Файл сохранен в: ${reportPath}`);
-        console.log("==========================================================================================");
-
+        console.log('\n=======================================================================================');
+        console.log('🎉 УСПЕШНО СОЗДАНО: План миграции.');
+        console.log(`Файл сохранён в: ${reportPath}`);
+        console.log('========================================================================================');
     } catch (error) {
-        console.error("\n❌ КРИТИЧЕСКАЯ ОШИБКА при выполнении миграции:", error);
+        console.error('\n❌ КРИТИЧЕСКАЯ ОШИБКА при выполнении миграции:', error);
         process.exit(1);
     }
 }
 
-module.exports = async function main() {
-    const args = process.argv.slice(2);
-    const compileFlagIndex = args.indexOf('--compile-migration-plan');
-
-    if (compileFlagIndex === -1) {
-        console.log("ℹ️ Не указан флаг --compile-migration-plan. Выход.");
-        return;
+/**
+ * Проверяет существование папки на удалённом хранилище.
+ * @param {string} remoteName - Имя удалённого хранилища (например, "ya:").
+ * @param {string} folderPath - Путь к папке для проверки.
+ * @returns {Promise<boolean>} true, если папка существует.
+ */
+async function checkRemoteFolderExists(remoteName, folderPath) {
+    try {
+        const result = await executeRcloneCommand(`rclone lsjson "${remoteName}${folderPath}"`);
+        if (!result.success) {
+            return false;
+        }
+        return true;
+    } catch (error) {
+        console.error(`❌ Ошибка при проверке папки ${remoteName}${folderPath}:`, error.message);
+        return false;
     }
+}
 
-    // Если флаг найден, нам нужны все последующие аргументы как пути к директориям
-    const targetDirectories = args.slice(compileFlagIndex + 1);
-
-    if (targetDirectories.length === 0) {
-        console.error("\n❌ Ошибка: После флага --compile-migration-plan должны быть указаны пути к каталогам для анализа.");
-        return;
-    }
-
-    console.log(`\n--- Обнаружен режим компиляции плана миграции ---`);
-
-    // В реальном проекте, мы бы собирали ВСЕ файлы из всех переданных каталогов.
-    // Используем имитацию сканирования для примера.
-    let allFiles = [];
-    for (const dir of targetDirectories) {
-        const filesInDir = await getBatchFileMetadata(dir);
-        allFiles = allFiles.concat(filesInDir);
-    }
-
-    if (allFiles.length === 0) {
-        console.log("⚠️ Не обнаружено файлов для анализа. Завершение.");
-        return;
-    }
-
-    await compileMigrationPlan(allFiles);
-
-    // ************************************************************
-    // НОВЫЙ БЛОК: ДЕМОНСТРАЦИЯ КОПИРОВАНИЯ ПАПКИ (Яндекс Диск -> Локально)
-    // ********************************
+/**
+ * Демонстрирует копирование папки с Яндекс Диска на локальную машину.
+ */
+async function demonstrateFolderCopy() {
     console.log('\n===============================================================================');
     console.log('📦 ДЕМО: Выполнение задания "Скопировать папку с Яндекс Диска"');
     console.log('===============================================================================');
 
-    const sourcePath = 'ya:MySourceFolder'; // <-- Исходная папка на Яндекс Диске
-    const destPath = path.join(process.cwd(), 'copied_data'); // <-- Локальная папка назначения
+    const sourcePath = 'MySourceFolder';
+    const destPath = path.join(process.cwd(), 'copied_data');
 
-    console.log(`\nНачинаем копирование: ${sourcePath} -> ${destPath}`);
+    console.log(`\nНачинаем копирование: ${REMOTE}${sourcePath} -> ${destPath}`);
 
-    // 1. Создаем целевую директорию, если она не существует
+    // 1. Проверяем существование папки на Яндекс Диске
+    console.log('🔎 Проверяем существование папки на Яндекс Диске...');
+    const folderExists = await checkRemoteFolderExists(REMOTE, sourcePath);
+    if (!folderExists) {
+        console.error(`❌ ОШИБКА: Папка ${REMOTE}${sourcePath} не найдена на Яндекс Диске.`);
+        console.log('💡 Возможные решения:');
+        console.log('   • Создайте папку MySourceFolder на Яндекс Диске: rclone mkdir ya:MySourceFolder');
+        console.log('   • Загрузите в неё тестовые файлы');
+        console.log('   • Измените sourcePath на существующую папку (например, Migrated)');
+        return;
+    }
+    console.log('✅ Папка найдена на Яндекс Диске.');
+
+    // 2. Создаём целевую директорию
     try {
-        await require('fs').promises.mkdir(destPath, { recursive: true });
-        console.log(`✅ Целевая директория готова.`);
+        await fs.mkdir(destPath, { recursive: true });
+        console.log('✅ Целевая директория готова.');
     } catch (e) {
         console.error(`❌ Не удалось создать целевую директорию: ${e.message}`);
-        return; // Прерываем выполнение
+        return;
     }
 
-    // 2. Вызываем rcloneTools для копирования
+    // 3. Выполняем копирование
     try {
-        const copyResult = await rcloneTools.copyDirectory(sourcePath, destPath);
+        const copyResult = await rcloneManager.copyFiles(
+            REMOTE,
+            sourcePath,
+            '',
+            destPath
+        );
 
         if (copyResult.success) {
             console.log('\n✨ УСПЕХ: Копирование папки с Яндекс Диска завершено!');
-            console.log(`Результат: ${copyResult.message}`);
+            console.log(`Операция ID: ${copyResult.operationId}`);
         } else {
             console.error('\n❌ ОШИБКА: Не удалось скопировать папку с Яндекс Диска.');
-            console.error(`Детали ошибки: ${copyResult.error}`);
+            console.error(`Детали ошибки: ${copyResult.skippedFiles.join(', ')}`);
         }
     } catch (error) {
-        console.error(`\n🛑 КРИТИЧЕСКАЯ ОШИБКА при вызове copyDirectory:`, error.message);
+        console.error('\n🛑 КРИТИЧЕСКАЯ ОШИБКА при вызове copyFiles:', error.message);
     }
+}
+
+
+
+module.exports = async function main() {
+    const args = process.argv.slice(2);
+
+    const compileFlagIndex = args.indexOf('--compile-migration-plan');
+    const runDemoFlag = args.includes('--run-demo');
+
+    // Если нет аргументов, показываем справку
+    if (args.length === 0) {
+        console.log(`
+📋 Доступные команды:
+  node index.js --compile-migration-plan <путь_к_каталогу>
+    - Анализирует файлы и создаёт план миграции
+
+  node index.js --run-demo
+    - Запускает демонстрационное копирование с Яндекс Диска
+
+Пример:
+  node index.js --compile-migration-plan ./test-data
+  `);
+        return;
+    }
+
+    // Если флаг компиляции не найден, но есть другие аргументы
+    if (compileFlagIndex === -1 && !runDemoFlag) {
+        console.error('❌ Неизвестный флаг. Используйте --compile-migration-plan или --run-demo');
+        return;
+    }
+
+    if (compileFlagIndex !== -1) {
+        const targetDirectories = args.slice(compileFlagIndex + 1);
+
+        if (targetDirectories.length === 0) {
+            console.error('\n❌ Ошибка: После флага --compile-migration-plan должны быть указаны пути к каталогам для анализа.');
+            return;
+        }
+
+        console.log('\n--- Обнаружен режим компиляции плана миграции ---');
+
+        let allFiles = [];
+        for (const dir of targetDirectories) {
+            try {
+                // Определяем, является ли путь удалённым (начинается с ya:)
+                if (dir.startsWith('ya:')) {
+                    const remotePath = dir.replace('ya:', '');
+                    console.log(`🔎 Сканируем удалённый каталог: ${dir}`);
+                    const remoteFiles = await scanRemoteDirectory('ya:', remotePath);
+                    allFiles = allFiles.concat(remoteFiles);
+                } else {
+                    // Для совместимости: локальное сканирование
+                    console.log(`🔎 Сканируем локальный каталог: ${dir}`);
+                    const localFiles = await getFilePathsRecursively(dir);
+                    allFiles = allFiles.concat(localFiles);
+                }
+            } catch (error) {
+                console.error(`❌ Ошибка при сканировании каталога ${dir}:`, error.message);
+                continue;
+            }
+        }
+
+        if (allFiles.length === 0) {
+            console.log('⚠️ Не обнаружено файлов для анализа. Завершение.');
+            return;
+        }
+
+        await compileMigrationPlanFromPaths(allFiles);
+    }
+
+    if (runDemoFlag) {
+        // Отдельная обработка демо‑режима
+        console.log('\n--- Запущен демо‑режим копирования ---');
+        await demonstrateFolderCopy();
+    }
+};
+
+// Запуск, если файл выполняется напрямую
+if (require.main === module) {
+    module.exports().catch(console.error);
 }
