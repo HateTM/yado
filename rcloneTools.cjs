@@ -12,6 +12,41 @@ const Logger = require('./src/utils/LoggingService.cjs');
 const rcloneWrapper = require('./src/utils/rclone-cli-wrapper.js');
 const { executeRcloneCommand } = rcloneWrapper;
 
+// --- Утилиты для ID ---
+
+/**
+ * Извлекает чистый числовой компонент из строки ID.
+ * @param {string} rawId - Исходная строка ID.
+ * @returns {number|null} Числовой ID или null, если не найден.
+ */
+function getNumericId(rawId) {
+    const match = rawId.match(/\d+/);
+    return match ? parseInt(match[0], 10) : null;
+}
+
+/**
+ * Определяет роли (Source/Target) для двух ID на основе их числового сравнения.
+ * @param {string} idA - Первый ID.
+ * @param {string} idB - Второй ID.
+ * @returns {{primary: string, secondary: string, role: 'Source'|'Target'|'Equal'}} Объект с ролями.
+ */
+function determineRRLRoles(idA, idB) {
+    const numA = getNumericId(idA);
+    const numB = getNumericId(idB);
+
+    if (numA === null || numB === null) {
+        return { primary: idA, secondary: idB, role: 'Equal' };
+    }
+
+    if (numA < numB) {
+        return { primary: idA, secondary: idB, role: 'Source' };
+    } else if (numA > numB) {
+        return { primary: idB, secondary: idA, role: 'Source' };
+    } else {
+        return { primary: idA, secondary: idB, role: 'Equal' };
+    }
+}
+
 // --- Константы ---
 const REMOTE = "ya:";
 const REPORTS_DIR = "reports";
