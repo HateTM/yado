@@ -1,45 +1,30 @@
 {
-  "name": "ollama-deduplicator",
+  "name": "yandex-disk-bs-migration",
   "version": "1.0.0",
-  "description": "AI-driven deduplication agent for Yandex Disk using Ollama and rclone.",
+  "description": "Система автоматизированной реструктуризации и миграции документации базовых станций (БС) на Яндекс.Диск",
+  "main": "index.js",
   "type": "commonjs",
+  "bin": {
+    "yado-bs": "./index.js"
+  },
   "scripts": {
-    "start": "node index.js",
-    "test": "jest -- __tests__/*.test.js"
+    "deploy": "node src/commands/deploy.js",
+    "upload-rrl": "node src/commands/upload-rrl.js",
+    "scan": "node src/commands/scan.js",
+    "help": "node index.js --help"
   },
   "keywords": [
-    "ollama",
     "rclone",
-    "deduplication"
+    "yandex-disk",
+    "basestation",
+    "migration",
+    "automated"
   ],
-  "author": "",
-  "license": "ISC",
-  "jest": {
-    "collectCoverage": true,
-    "coverageDirectory": "coverage",
-    "testEnvironment": "node",
-    "moduleFileExtensions": [
-      "js",
-      "json",
-      "ts"
-    ],
-    "transform": {
-      "^.+\\.(t|j)sx?$": "ts-jest"
-    }
+  "author": "HateTM",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
   },
-  "dependencies": {
-    "@utcp/code-mode": "^1.2.12",
-    "axios": "^1.16.1",
-    "eslint-js": "github:eslint/js"
-  },
-  "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@typescript-eslint/eslint-plugin": "^8.60.0",
-    "eslint": "^10.4.0",
-    "eslint-plugin-react": "^7.37.5",
-    "globals": "^17.6.0",
-    "jest": "^30.4.2",
-    "ts-jest": "^29.4.11",
-    "typescript-eslint-language-service": "^5.0.5"
-  }
+  "dependencies": {},
+  "devDependencies": {}
 }
