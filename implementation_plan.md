@@ -1,57 +1,97 @@
 # Implementation Plan
 
-**Overview**
-Цель — провести полную реструктуризацию каталогов БС на Яндекс.Диске согласно утвержденной иерархии, а также реализовать сложную логику для обработки файлов транспортной сети (РРЛ). Это включает в себя стандартизацию UID, определение ролей Хост/Зеркало, копирование файлов в целевые папки и создание текстовых указателей для РРЛ.
+## Overview
+Система автоматизированной реструктуризации и миграции технической документации базовых станций с поддержкой динамических ID, числового сравнения идентификаторов и интеграцией rclone.
 
-**[Types]**
-Необходимо ввести новый тип данных для метаданных ссылки РРЛ, который будет использоваться в `rcloneTools.cjs` и `migration-engine.cjs`.
+## Types
 
-**Новый тип:** `RRLLinkMetadata`
+### BaseStation Registry Entry
+```javascript
+{
+  bsId: string,      // ID БС (строка: "2971", "85", "109075", "49986-P-76")
+  bsName: string,    // Оставшееся имя без ID (например, "_Копнинское")
+  region: string,    // Название региона (например, "Удмуртия")
+  operator: string,  // Название оператора (например, "Мегафон")
+  oldPath: string    // Оригинальный путь к папке
+}
+```
 
-* `sourceIdMin`: Строка, ID БС с меньшим числовым значением (Хост).
-* `sourceIdMax`: Строка, ID БС с большим числовым значением (Зеркало).
-* `description`: Строка, подробное описание содержимого, которое объединяют эти два БС.
-* `originalFilesList`: Массив строк, полные пути ко всем файлам, которые были скопированы в эту ссылку.
+### RRL File Metadata
+```javascript
+{
+  filename: string,         // "[Дата]_[ID-Mеньший]_[ID-Больший]_RRL_[Описание]_v[Версия].ext"
+  numericId1: number,       // Меньший числовой ID (Хост)
+  numericId2: number,       // Больший числовой ID (Зеркало)
+  region: string,           // Регион БС
+  operator: string,         // Оператор связи
+  description: string,      // Описание пролета (частота, тип, длина)
+  version: number,          // Версия файла
+  originalPath: string,     // Текущий путь файла
+  targetHostPath: string,   // Путь на Хосте
+  targetMirrorPath: string  // Путь ссылки на Зеркале
+}
+```
 
-**[Files]**
+## Files
 
-* **Изменить:** `rcloneTools.cjs`
-  * **Изменения:** Добавить функции `getNumericId` и `determineRRLRoles` для обработки логики Хост/Зеркало. Реализовать `generateLinkMetadata` и `formatLinkContent` для создания указателя. Обновить `copyFiles` и `getOnlyDuplicateGroups` для использования новой логики.
-* **Изменить:** `src/engine/migration-engine.cjs`
-  * **Изменения:** Обновить `runPlan` для вызова новой логики определения ролей и обработки РРЛ.
-* **Создать:** `src/utils/rrlLinkCreator.js` (или `rrlLinkCreator.cjs`)
-  * **Назначение:** Изолировать логику генерации метаданных и содержимого файла-указателя.
+### New Files to Create:
+1. `rclone-cli-wrapper.js` - Обёртка для выполнения rclone команд
+2. `migrationEngine.js` - Ядро миграции с логикой Host/Mirror
+3. `index.js` - Точка входа проекта
+4. `package.json` - Зависимости проекта
+5. `README.md` - Инструкция для инженеров
 
-**[Functions]**
+### Existing Files to Modify:
+- None in this iteration
 
-* **Новые функции в `rcloneTools.cjs`:**
-  * `getNumericId(rawId)`: Принимает сырой ID (строка), извлекает и возвращает его числовое значение.
-  * `determineRRLRoles(idA, idB)`: Определяет, какой из двух ID является Хостом (min) и Зеркалом (max) на основе числового сравнения.
-  * `generateLinkMetadata(sourceIdMin, sourceIdMax, description, files)`: Создает объект метаданных для ссылки РРЛ.
-  * `formatLinkContent(metadata)`: Форматирует метаданные в готовый текст для файла-указателя.
-* **Измененные функции в `rcloneTools.cjs`:**
-  * `copyFiles(sourceRemote, srcPath, destRemote, dstPath)`: Добавить логику проверки, является ли целевая папка РРЛ, и при необходимости вызывать `rrlLinkCreator.js` для создания указателя.
-  * `getOnlyDuplicateGroups()`: Добавить этап, где для каждой группы дубликатов, которая должна быть объединенной в РРЛ, вызывается логика `determineRRLRoles` и `generateLinkMetadata`.
-* **Измененные функции в `src/engine/migration-engine.cjs`:**
-  * `runPlan(fileList)`: После определения категории, если файл является частью РРЛ, необходимо вызвать логику определения ролей и запустить процесс создания ссылки.
+## Functions
 
-**[Classes]**
+### New Functions:
 
-* **Изменений нет.**
+#### `rclone-cli-wrapper.js`:
+- `executeRcloneCommand(command)` - Выполняет команду rclone и возвращает stdout/stderr
+- `copyFileToRemote(src, dest, remote, container)` - Копирование файла в облако с rename
+- `mkdirInRemote(remote, container, path)` - Создание папки в облаке
+- `listRemoteDirectory(remote, container, path)` - Листинг директории в облаке
 
-**[Dependencies]**
-Не требуются новые внешние зависимости. Будет использоваться только `rcloneTools.cjs` и `src/utils/rrlLinkCreator.js`.
+#### `migrationEngine.js`:
+- `getNumericId(rawId)` - Извлекает числовой ID из строки
+- `extractBsIdFromPath(oldPath)` - Извлекает ID из старого пути
+- `extractRegionAndOperator(oldPath)` - Парсит регион и оператора
+- `generateNewCloudPath(bsId, bsName, region, operator)` - Формирует новый путь
+- `isHostOrMirror(numericId1, numericId2)` - Определяет роль (Host/Mirror)
+- `processRRLFile(fileMetadata, bsRegistry)` - Обрабатывает файл РРЛ (размещает на Host, создаёт ссылку на Mirror)
+- `processBsDirectory(bsEntry)` - Обработчик папки БС (создаёт структуру подпапок)
+- `migrateBs(bsEntry, rrlFile)` - Миграция конкретной БС
 
-**[Testing]**
-Необходимо создать следующие тесты:
+#### `index.js`:
+- `scanArchives(archivePath)` - Запуск сканирования
+- `deployCloudStructure(csvPaths)` - Развёртывание в облаке
+- `uploadRRLFile(rlFilePath)` - Загрузка файла РРЛ
 
-1. **Unit Tests для `rcloneTools.cjs`**: Тестирование `getNumericId` с различными форматами ID (число, буквы, кириллица, смешанный).
-2. **Unit Tests для `rrlLinkCreator.js`**: Проверка корректности генерации метаданных и содержимого файла-указателя.
-3. **Integration Tests для `migration-engine.cjs`**: Тестирование полного цикла: от получения метаданных до определения ролей и успешного вызова `rclone copy` и создания указателя.
+## Classes
 
-**[Implementation Order]**
+No new classes in this iteration.
 
-1. Реализовать вспомогательные функции `getNumericId` и `determineRRLRoles` в `rcloneTools.cjs`.
-2. Создать и реализовать модуль `rrlLinkCreator.js` с функциями `generateLinkMetadata` и `formatLinkContent`.
-3. Обновить `rcloneTools.cjs` для использования новой логики при обнаружении дубликатов и при копировании файлов в целевые папки.
-4. Обновить `src/engine/migration-engine.cjs` для интеграции логики определения ролей и запуска процесса создания указателей РРЛ.
+## Dependencies
+
+### New Dependencies:
+- None - используем только встроенные модули Node.js:
+  - `fs/promises`
+  - `path`
+  - `child_process`
+
+## Testing
+
+Тестирование через CLI-команды с проверкой:
+- Валидность генерируемых CSV-файлов
+- Корректность вызовов rclone (проверка выхода)
+- Числовое сравнение ID (тесты с разными форматами)
+
+## Implementation Order
+
+1. Создать `implementation_plan.md` и `package.json` (Шаг 1)
+2. Реализовать `rcloneTools.cjs` и команду `--scan` (Шаг 2) ✓
+3. Реализовать `rclone-cli-wrapper.js` и `migrationEngine.js` (Шаг 3)
+4. Создать `index.js` и команду `--upload-rrl` (Шаг 4)
+5. Создать `README.md` (Шаг 5)
